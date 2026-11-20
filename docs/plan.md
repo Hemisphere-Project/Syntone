@@ -99,7 +99,7 @@ The brief allows trading audio quality for latency. The research answer: on LTE,
 ```
 
 - **Relay** ([server/](../server/index.js)): Node.js, one process. It is the clock, the room list and the fan-out. It never decodes audio.
-- **Frame** ([shared/frame.js](../shared/frame.js)): sequence number, capture time in relay microseconds, one Opus packet. The same frame is meant to travel over WebSocket first, then WebTransport datagrams, a WebRTC DataChannel or plain UDP, and through a second relay or a peer: timing lives in the frame, not in the transport.
+- **Frame** ([shared/frame.js](../shared/frame.js)): sequence number, capture time in relay microseconds, a codec byte, one Opus packet (or plain PCM on a local network). The same frame is meant to travel over WebSocket first, then WebTransport datagrams, a WebRTC DataChannel or plain UDP, and through a second relay or a peer: timing lives in the frame, not in the transport.
 - **Sender**: microphone or line with all voice processing off, or a file; mixed in Web Audio; encoded with the browser's Opus encoder, with a WebAssembly fallback.
 - **Receiver**: decodes, then plays from an AudioWorklet (code running in the browser's audio thread) that holds the equation above. When data is late it plays silence and rejoins exactly on time; it never stalls and catches up.
 - **Lab** ([web/lab/](../web/lab/), [lab/](../lab/analyse-clicks.mjs)): the measuring instruments. Nothing is called working until it has a number from here.

@@ -2,9 +2,9 @@
 import { test, before, after } from 'node:test'
 import assert from 'node:assert/strict'
 import WebSocket from 'ws'
-import { start, fanOut } from '../server/index.js'
+import { start, fanOut, cleanHas, POLICY, USES } from '../server/index.js'
 import { ClockSync } from '../shared/clock.js'
-import { encodeFrame, decodeFrame } from '../shared/frame.js'
+import { encodeFrame, decodeFrame, HEADER_BYTES, CODEC_PCM } from '../shared/frame.js'
 
 const D = 450                                               // the test relay's default group delay, ms
 let srv, base
@@ -28,13 +28,15 @@ function client() {
 }
 
 /** Joins a room and waits for the welcome. */
-async function join(room, role, name) {
+async function join(room, role, name, has) {
   const c = client(); await c.open
-  c.send({ t: 'hello', room, role, name })
+  c.send({ t: 'hello', room, role, name, has })
   c.welcome = await c.next('welcome')
   return c
 }
-const frame = (seq, captureUs = seq * 20_000) => encodeFrame({ seq, captureUs, payload: Uint8Array.from({ length: 80 }, (_, i) => (seq + i) & 0xff) })
+const frame = (seq, captureUs = seq * 20_000, codec) => encodeFrame({ seq, captureUs, codec, payload: Uint8Array.from({ length: 80 }, (_, i) => (seq + i) & 0xff) })
+/** The relay's own record of a connected client. */
+const peerOf = (c) => [...srv.wss.clients].map((ws) => ws.peer).find((p) => p.id === c.welcome.id)
 const seqs = (c) => c.frames.map((f) => decodeFrame(f).seq)
 /** Every message sent before this has been handled by the relay and its answers have arrived. */
 async function settle(...cs) {
@@ -75,7 +77,7 @@ test('rooms: slots are the lowest free, roster and state reach everyone, a slot 
   assert.deepEqual(r.peers.map((p) => p.name), ['A', 'Bscript'])
 
   b.send({ t: 'state', patch: { stagger: true } })
-  assert.deepEqual((await a.next('state')).state, { delayMs: D, stagger: true })
+  assert.deepEqual((await a.next('state')).state, { stagger: true })
 
   a.ws.close()
   await new Promise((ok) => setTimeout(ok, 100))
@@ -83,7 +85,7 @@ test('rooms: slots are the lowest free, roster and state reach everyone, a slot 
   c.send({ t: 'hello', room: 'r1', role: 'lab', name: 'C' })
   const wc = await c.next('welcome')
   assert.equal(wc.slot, 0, 'the freed slot is taken again')
-  assert.deepEqual(wc.state, { delayMs: D, stagger: true }, 'a newcomer gets the room state')
+  assert.deepEqual(wc.state, { stagger: true }, 'a newcomer gets the room state')
   b.ws.close(); c.ws.close()
 })
 
@@ -104,11 +106,11 @@ test('room state accepts only small flat values and stays bounded', async () => 
   const a = client(); await a.open
   a.send({ t: 'hello', room: 'r3', name: 'A' }); await a.next('welcome')
   a.send({ t: 'state', patch: { mode: 'raw', run: false, big: 'x'.repeat(5000), nested: { a: 1 }, '__proto__x': 1, 'bad key': 1, n: 3 } })
-  assert.deepEqual((await a.next('state')).state, { delayMs: D, mode: 'raw', run: false, n: 3 })
+  assert.deepEqual((await a.next('state')).state, { mode: 'raw', run: false, n: 3 })
   const many = Object.fromEntries(Array.from({ length: 40 }, (_, i) => ['k' + i, i]))
   a.send({ t: 'state', patch: many })                      // too many keys: refused whole
   a.send({ t: 'state', patch: { n: null } })               // null removes a key
-  assert.deepEqual((await a.next('state')).state, { delayMs: D, mode: 'raw', run: false })
+  assert.deepEqual((await a.next('state')).state, { mode: 'raw', run: false })
   a.ws.close()
 })
 
@@ -133,22 +135,55 @@ test('garbage does not kill the connection', async () => {
   c.ws.close()
 })
 
-test('group delay: every room starts at the default D, a peer can set it within bounds, null restores it', async () => {
+test('group delay: one group per room at the default D, a peer can set it within bounds, null restores it', async () => {
   const a = await join('d1', 'sender', 'S')
-  assert.deepEqual(a.welcome.state, { delayMs: D })
-  a.send({ t: 'state', patch: { delayMs: 250 } })
-  assert.equal((await a.next('state')).state.delayMs, 250)
-  for (const bad of [5, 60_000, -1, '300', true, { v: 1 }]) {
-    a.send({ t: 'state', patch: { delayMs: bad } })
-    const st = (await a.next('state')).state
-    assert.equal(st.delayMs, 250, `delayMs ${JSON.stringify(bad)} refused`)
-  }
-  a.send({ t: 'state', patch: { delayMs: 2500.5 } })                       // buffered mode: seconds
-  assert.equal((await a.next('state')).state.delayMs, 2500.5)
-  a.send({ t: 'state', patch: { delayMs: null } })
-  assert.equal((await a.next('state')).state.delayMs, D, 'null puts the default back, never removes D')
+  assert.equal(a.welcome.group, 0, 'every device is in the room\'s one group')
+  assert.deepEqual(a.welcome.groups, [{ id: 0, delayMs: D }])
+  assert.deepEqual(a.welcome.state, {}, 'D is the group\'s, not a room state key')
+  a.send({ t: 'delay', delayMs: 250 })
+  assert.deepEqual((await a.next('groups')).groups, [{ id: 0, delayMs: 250 }])
+  for (const bad of [5, 60_000, -1, '300', true, { v: 1 }, undefined]) a.send({ t: 'delay', delayMs: bad })
+  a.send({ t: 'delay', group: 7, delayMs: 300 })                          // no such group
+  a.send({ t: 'delay', delayMs: 2500.5 })                                 // buffered mode: seconds
+  assert.deepEqual((await a.next('groups')).groups, [{ id: 0, delayMs: 2500.5 }], 'refusals broadcast nothing')
+  a.send({ t: 'delay', group: 0, delayMs: null })
+  assert.deepEqual((await a.next('groups')).groups, [{ id: 0, delayMs: D }], 'null puts the default back, never removes D')
+  a.send({ t: 'state', patch: { delayMs: 100 } })                         // an ordinary state key, not D
+  await a.next('state')
   const b = await join('d1', 'receiver', 'R')
-  assert.equal(b.welcome.state.delayMs, D, 'a receiver joining learns D from the welcome')
+  assert.deepEqual(b.welcome.groups, [{ id: 0, delayMs: D }], 'a receiver joining learns D from the welcome')
+  a.ws.close(); b.ws.close()
+})
+
+test('hello: what a device has is kept on its peer, cleaned; the welcome answers with what the room uses', async () => {
+  const has = { timeBases: ['relay', 'gps'], transports: ['websocket', 'websocket'], codecs: ['opus', 'pcm', 'Bad Name', 7], latency: ['reported', 'set'], player: 'browser', extra: 'x' }
+  const c = await join('h1', 'receiver', 'R', has)
+  assert.deepEqual(peerOf(c).has, { timeBases: ['relay', 'gps'], transports: ['websocket'], codecs: ['opus', 'pcm'], latency: ['reported', 'set'], player: 'browser' })
+  assert.deepEqual(c.welcome.uses, { timeBase: 'relay', transport: 'websocket', codec: 'opus' })
+  assert.deepEqual(c.welcome.uses, USES)
+  const quiet = await join('h1', 'lab', 'L')                              // says nothing: empty lists, same answer
+  assert.deepEqual(peerOf(quiet).has, { timeBases: [], transports: [], codecs: [], latency: [], player: '' })
+  assert.deepEqual(quiet.welcome.uses, USES)
+  c.ws.close(); quiet.ws.close()
+})
+
+test('cleanHas bounds what a device may claim', () => {
+  assert.deepEqual(cleanHas(null), { timeBases: [], transports: [], codecs: [], latency: [], player: '' })
+  assert.deepEqual(cleanHas({ codecs: 'opus', player: ['browser'] }), { timeBases: [], transports: [], codecs: [], latency: [], player: '' })
+  assert.equal(cleanHas({ codecs: Array.from({ length: 20 }, (_, i) => 'c' + i) }).codecs.length, 8)
+  assert.deepEqual(cleanHas({ latency: ['x'.repeat(25), '-set', 'mic'] }).latency, ['mic'])
+})
+
+test('policy: every room carries the strictest one and sends it in the welcome; no message loosens it', async () => {
+  assert.deepEqual(POLICY, { identity: 'none', reports: 'counts', location: 'never', microphone: 'never', records: 'none' })
+  assert.ok(Object.isFrozen(POLICY))
+  const a = await join('p1', 'receiver', 'A')
+  assert.deepEqual(a.welcome.policy, POLICY)
+  a.send({ t: 'state', patch: { location: 'required', identity: 'name' } })
+  assert.deepEqual((await a.next('state')).state, { location: 'required', identity: 'name' }, 'room state is not the policy')
+  a.send({ t: 'policy', policy: { location: 'required' } })               // no such message
+  const b = await join('p1', 'receiver', 'B')
+  assert.deepEqual(b.welcome.policy, POLICY)
   a.ws.close(); b.ws.close()
 })
 
@@ -176,9 +211,10 @@ test('only a sender\'s well-formed frames are relayed', async () => {
   const r = await join('f3', 'receiver', 'R')
   const r2 = await join('f3', 'receiver', 'R2')
   r2.ws.send(frame(1))                                       // a receiver cannot broadcast
-  s.ws.send(frame(2).subarray(0, 13))                        // header without audio
+  s.ws.send(frame(2).subarray(0, HEADER_BYTES))              // header without audio
   s.ws.send(Uint8Array.of(7, ...frame(3).subarray(1)))       // unknown type
   s.ws.send(new Uint8Array(9000).fill(1, 0, 1))              // too large
+  s.ws.send(frame(6, 0, CODEC_PCM))                          // well formed, but not the room's codec
   s.ws.send(frame(4))
   const lone = client(); await lone.open
   lone.ws.send(frame(5))                                     // not in a room

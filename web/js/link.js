@@ -2,6 +2,13 @@
 // Client clock = performance.now() (monotonic, ms). Server clock = the relay's monotonic clock.
 import { ClockSync } from '/shared/clock.js'
 
+/**
+ * What a page of this build has, said to the relay on joining (docs/architecture.md §4). The click
+ * test's mapping modes and its trim are the first two latency sources (architecture §6). Codecs are
+ * empty: a page that plays or sends audio says which it handles, through the `has` option.
+ */
+export const PAGE_HAS = Object.freeze({ timeBases: ['relay'], transports: ['websocket'], codecs: [], latency: ['reported', 'set'], player: 'browser' })
+
 const PAIR_GAP_MS = 12      // each probe is two pings this far apart
 const DEAD_MS = 5000        // no answer for this long on an open socket: the path is dead, reconnect
 const PAUSE_MS = 500        // wall clock ran this much further than the monotonic clock: the device slept
@@ -10,16 +17,21 @@ const median = (a) => { const s = [...a].sort((x, y) => x - y); const m = s.leng
 
 export class Link extends EventTarget {
   /**
-   * @param {{room?: string, role?: string, name?: string, url?: string}} o
+   * @param {{room?: string, role?: string, name?: string, url?: string, has?: object}} o
+   *   `has` is merged over PAGE_HAS, e.g. {codecs: ['opus']}
    */
   constructor(o = {}) {
     super()
-    this.o = { room: 'lobby', role: 'receiver', name: '', ...o }
+    this.o = { room: 'lobby', role: 'receiver', name: '', ...o, has: { ...PAGE_HAS, ...o.has } }
     this.url = o.url || `${location.protocol === 'https:' ? 'wss' : 'ws'}://${location.host}/ws`
     this.clock = new ClockSync()
     this.id = null
     this.slot = -1
     this.state = {}
+    this.uses = null           // what the room uses: {timeBase, transport, codec}
+    this.policy = null         // what the room may ask of this device (architecture §3)
+    this.group = null          // this device's group, whose delay it plays at
+    this.groups = []           // [{id, delayMs}]
     this.peers = []
     this.reconnects = 0
     this.resets = 0            // clock thrown away because the device slept
@@ -52,7 +64,7 @@ export class Link extends EventTarget {
       // A new connection may be a new network path (WiFi → LTE): old samples would poison the fit.
       this._freshClock()
       this._lastPong = performance.now()
-      ws.send(JSON.stringify({ t: 'hello', room: this.o.room, role: this.o.role, name: this.o.name, want: this.slot >= 0 ? this.slot : undefined }))
+      ws.send(JSON.stringify({ t: 'hello', room: this.o.room, role: this.o.role, name: this.o.name, want: this.slot >= 0 ? this.slot : undefined, has: this.o.has }))
       this._schedulePing(0)
       this._emit('open')
     }
@@ -76,9 +88,11 @@ export class Link extends EventTarget {
         }
         case 'welcome':
           this.id = m.id; this.slot = m.slot; this.state = m.state || {}
-          this._emit('welcome', m); this._emit('state', this.state)
+          this.uses = m.uses || null; this.policy = m.policy || null; this.group = m.group ?? null; this.groups = m.groups || []
+          this._emit('welcome', m); this._emit('state', this.state); this._emit('groups', this.groups)
           break
         case 'state': this.state = m.state || {}; this._emit('state', this.state); break
+        case 'groups': this.groups = m.groups || []; this._emit('groups', this.groups); break
         case 'roster': this.peers = m.peers || []; this._emit('roster', this.peers); break
       }
     }
@@ -156,6 +170,12 @@ export class Link extends EventTarget {
 
   /** Server time now, in ms. */
   now() { return this.clock.toServer(performance.now()) }
+
+  /** This device's group delay D in ms, null before the welcome. */
+  get delayMs() { return this.groups.find((g) => g.id === this.group)?.delayMs ?? null }
+
+  /** Sets D for this device's group (null: back to the relay's default). */
+  setDelay(delayMs) { if (this.ws?.readyState === 1) this.ws.send(JSON.stringify({ t: 'delay', delayMs })) }
 
   setState(patch) { if (this.ws?.readyState === 1) this.ws.send(JSON.stringify({ t: 'state', patch })) }
   report(report) { if (this.ws?.readyState === 1) this.ws.send(JSON.stringify({ t: 'report', report })) }

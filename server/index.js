@@ -6,24 +6,42 @@
 //
 // Wire protocol v1 — JSON text frames for control, binary frames for audio:
 //   → {t:'ping', id, t0}                     ← {t:'pong', id, t0, t1, t2}      clock sync, see shared/clock.js
-//   → {t:'hello', room, role, name, want}    ← {t:'welcome', id, slot, room, state}
+//   → {t:'hello', room, role, name, want, has}
+//                                            ← {t:'welcome', id, slot, room, state, uses, policy, group, groups}
 //                                            `want` = the slot held before a reconnect; given back if free
+//                                            `has` = what the device has, kept on its peer (see cleanHas)
 //   → {t:'report', report:{...}}             stored on the peer, shown to the room in the roster
 //   → {t:'state', patch:{...}}               merged into the room state, ← {t:'state', state} to everyone
 //                                            (flat, small values only: see cleanPatch)
+//   → {t:'delay', delayMs, group}            sets a group's D (default: the peer's own group),
+//                                            ← {t:'groups', groups:[{id, delayMs}]} to everyone
 //                                            ← {t:'roster', peers:[{id, slot, role, name, report, drops}]}
+//                                            to everyone: on a join or a leave, and once a second while
+//                                            reports or skip counts change
 //   → binary audio frame (shared/frame.js)   ← the same bytes, to every receiver in the room
 //
-// Audio: one sender per room at a time (role 'sender'). Its frames go, byte for byte, to every peer
-// of the room whose role is 'receiver'; nobody else gets them, the sender included. Another sender
-// takes the room over once the current one has sent no audio for SENDER_IDLE_MS (a sender that
-// reconnects on a new path is back within that time). A receiver whose socket cannot keep up has
-// frames skipped rather than queued: a frame that arrives after its play time is worth nothing, and
-// a growing queue would make every later frame late too. `drops` in the roster counts them.
+// The seams (docs/architecture.md §6). A device says what it has in `hello`: time bases, transports,
+// codecs, ways to learn its output latency, kind of player. The welcome answers with what the room
+// uses. This build has one part behind each seam (the relay's clock exchange, WebSocket, Opus), so
+// the answer is the same for every device; the path is there for the day a seam gets a second part.
 //
-// Group delay D: the room state always holds `delayMs`, the room's delay in ms. Every receiver plays
-// a frame so that it is heard at captureUs / 1000 + delayMs on the relay clock (plan §2). It starts
-// at DELAY_MS, any peer may set it within [MIN_DELAY_MS, MAX_DELAY_MS], and null puts the default back.
+// Policy (architecture §3): every room carries what it may ask of a device — identity, reports,
+// location, microphone, records kept by the relay — and sends it in the welcome. A room starts at
+// the strictest values (POLICY) and no message changes them. Announced only, for now: the roster
+// still carries each device's name and report, which the lab's click test reads.
+//
+// Audio: one sender per room at a time (role 'sender'). Its frames go, byte for byte, to every peer
+// of the room whose role is 'receiver'; nobody else gets them, the sender included. A frame whose
+// codec is not the room's is dropped. Another sender takes the room over once the current one has
+// sent no audio for SENDER_IDLE_MS (a sender that reconnects on a new path is back within that time).
+// A receiver whose socket cannot keep up has frames skipped rather than queued: a frame that arrives
+// after its play time is worth nothing, and a growing queue would make every later frame late too.
+// `drops` in the roster counts them.
+//
+// Group delay D: a group is the devices that share a space, and so one delay (architecture §4).
+// One group per room for now, id 0, every peer in it. A receiver plays a frame so that it is heard at
+// captureUs / 1000 + D of its group, on the relay clock (plan §2). D starts at DELAY_MS, any peer may
+// set it within [MIN_DELAY_MS, MAX_DELAY_MS], and null puts the default back.
 //
 // A peer that sends nothing for SILENT_MS is dropped: its path died without saying so (WiFi → LTE),
 // and it must not keep its slot. Clients ping about once per second.
@@ -32,7 +50,7 @@ import { readFile } from 'node:fs/promises'
 import { extname, join, normalize, resolve, sep } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { WebSocketServer } from 'ws'
-import { decodeFrame } from '../shared/frame.js'
+import { decodeFrame, CODECS } from '../shared/frame.js'
 
 const ROOT = resolve(fileURLToPath(new URL('..', import.meta.url)))
 const PORT = Number(process.env.PORT || 3700)
@@ -45,6 +63,16 @@ const MIN_DELAY_MS = 10
 const MAX_DELAY_MS = 30_000            // buffered mode runs D at several seconds
 const SENDER_IDLE_MS = 1000
 const MAX_BACKLOG = 64 * 1024          // bytes waiting on one receiver's socket before frames are skipped
+
+/** What every room uses, one part per seam (architecture §2). The time base is the ping/pong exchange. */
+export const USES = Object.freeze({ timeBase: 'relay', transport: 'websocket', codec: 'opus' })
+/**
+ * The strictest policy, every room's default (architecture §3). The values each item may take:
+ *   identity    none · name                 reports     none · counts · device
+ *   location    never · opt-in · required   microphone  never · opt-in · required
+ *   records     none · operational
+ */
+export const POLICY = Object.freeze({ identity: 'none', reports: 'counts', location: 'never', microphone: 'never', records: 'none' })
 
 /** The reference clock: monotonic, immune to NTP steps on the server. Epoch = process start. */
 export const now = () => performance.now()
@@ -85,13 +113,17 @@ async function serveStatic(req, res) {
 
 // ---------------------------------------------------------------- rooms
 
-const rooms = new Map()   // name → { peers: Map<id, peer>, state: {}, sender: peer id | null, senderAt: ms }
+// name → { peers: Map<id, peer>, state: {}, uses, policy, groups: [{id, delayMs}], sender: peer id | null, senderAt: ms }
+const rooms = new Map()
 let nextId = 1
 const cfg = { delayMs: DELAY_MS, senderIdleMs: SENDER_IDLE_MS }
 
 function roomOf(name) {
   let r = rooms.get(name)
-  if (!r) { r = { peers: new Map(), state: { delayMs: cfg.delayMs }, sender: null, senderAt: 0 }; rooms.set(name, r) }
+  if (!r) {
+    r = { peers: new Map(), state: {}, uses: USES, policy: POLICY, groups: [{ id: 0, delayMs: cfg.delayMs }], sender: null, senderAt: 0 }
+    rooms.set(name, r)
+  }
   return r
 }
 const send = (ws, msg) => { if (ws.readyState === 1) ws.send(JSON.stringify(msg)) }
@@ -109,17 +141,28 @@ function freeSlot(room, want) {
 }
 const clean = (v, max = 40) => String(v ?? '').replace(/[^\w .:@-]/g, '').slice(0, max)
 
+/**
+ * What a device says it has, kept on its peer: lists of short lowercase names, and one player kind.
+ *   {timeBases:['relay'], transports:['websocket'], codecs:['opus'], latency:['reported','set'], player:'browser'}
+ * Anything else is dropped; a device that says nothing has empty lists.
+ */
+const TOKEN = /^[a-z0-9][a-z0-9-]{0,23}$/
+const HAS_LISTS = ['timeBases', 'transports', 'codecs', 'latency']
+export function cleanHas(has) {
+  const out = { timeBases: [], transports: [], codecs: [], latency: [], player: '' }
+  if (!has || typeof has !== 'object') return out
+  for (const k of HAS_LISTS) {
+    if (Array.isArray(has[k])) out[k] = [...new Set(has[k].filter((v) => typeof v === 'string' && TOKEN.test(v)))].slice(0, 8)
+  }
+  if (typeof has.player === 'string' && TOKEN.test(has.player)) out.player = has.player
+  return out
+}
 /** Room state is shared by everyone and lives as long as the room: keep it flat, small and bounded. */
 const STATE_KEYS = 24
 function cleanPatch(patch, state) {
   const out = {}
   for (const [k, v] of Object.entries(patch)) {
     if (!/^[a-z][a-zA-Z0-9]{0,23}$/.test(k)) continue
-    if (k === 'delayMs') {                               // always present, always a usable delay
-      if (v === null) out.delayMs = cfg.delayMs
-      else if (typeof v === 'number' && v >= MIN_DELAY_MS && v <= MAX_DELAY_MS) out.delayMs = v
-      continue
-    }
     if (typeof v === 'boolean' || (typeof v === 'number' && Number.isFinite(v)) || (typeof v === 'string' && v.length <= 64)) out[k] = v
     else if (v === null) out[k] = null
   }
@@ -146,7 +189,9 @@ export function fanOut(peers, data, maxBacklog = MAX_BACKLOG) {
 
 function onAudio(peer, raw, t) {
   const room = peer.room
-  if (!room || peer.role !== 'sender' || !decodeFrame(raw)) return
+  if (!room || peer.role !== 'sender') return
+  const f = decodeFrame(raw)
+  if (!f || f.codec !== CODECS[room.uses.codec]) return
   if (room.sender !== peer.id) {
     const current = room.sender !== null && room.peers.get(room.sender)
     if (current && t - room.senderAt < cfg.senderIdleMs) return     // the room has a live sender
@@ -176,8 +221,13 @@ function onMessage(ws, peer, raw, isBinary) {
       peer.role = clean(m.role, 16) || 'receiver'
       peer.name = clean(m.name)
       peer.slot = freeSlot(room, m.want)
+      peer.has = cleanHas(m.has)
+      peer.group = room.groups[0].id
       room.peers.set(peer.id, peer)
-      send(ws, { t: 'welcome', id: peer.id, slot: peer.slot, room: name, state: room.state })
+      send(ws, {
+        t: 'welcome', id: peer.id, slot: peer.slot, room: name, state: room.state,
+        uses: room.uses, policy: room.policy, group: peer.group, groups: room.groups,
+      })
       broadcast(room, roster(room))
       break
     }
@@ -192,6 +242,15 @@ function onMessage(ws, peer, raw, isBinary) {
       if (!patch) break
       for (const [k, v] of Object.entries(patch)) { if (v === null) delete peer.room.state[k]; else peer.room.state[k] = v }
       broadcast(peer.room, { t: 'state', state: peer.room.state })
+      break
+    }
+    case 'delay': {                                      // a group's D: always present, always usable
+      if (!peer.room) break
+      const g = peer.room.groups.find((x) => x.id === (m.group ?? peer.group))
+      const v = m.delayMs
+      if (!g || !(v === null || (typeof v === 'number' && v >= MIN_DELAY_MS && v <= MAX_DELAY_MS))) break
+      g.delayMs = v === null ? cfg.delayMs : v
+      broadcast(peer.room, { t: 'groups', groups: peer.room.groups })
       break
     }
   }
@@ -216,7 +275,7 @@ export function start({ port = PORT, host = HOST, silentMs = SILENT_MS, delayMs 
   const wss = new WebSocketServer({ server, path: '/ws', maxPayload: 1 << 20, perMessageDeflate: false })
   wss.on('connection', (ws) => {
     ws._socket?.setNoDelay(true)                         // a ping answered late is a wrong clock
-    const peer = { id: nextId++, ws, room: null, slot: -1, role: '', name: '', report: null, drops: 0, dirty: false, lastSeen: now() }
+    const peer = { id: nextId++, ws, room: null, slot: -1, role: '', name: '', has: null, group: null, report: null, drops: 0, dirty: false, lastSeen: now() }
     ws.peer = peer
     ws.on('message', (raw, isBinary) => onMessage(ws, peer, raw, isBinary))
     ws.on('close', () => onClose(peer))

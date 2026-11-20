@@ -32,8 +32,8 @@ The first use is the hardest on privacy and simplicity: people's own phones at p
 | [`docs/lab.md`](docs/lab.md) | How to measure sync between real devices with the click test |
 | `shared/clock.js` | Clock sync estimator: runs in the browser and in Node, small enough to port to an ESP32 |
 | `shared/beats.js` | Decides which clicks to queue on each pass, whatever the device's output delay |
-| `shared/frame.js` | The audio frame: sequence number, capture time, one Opus packet |
-| `server/` | The relay: reference clock, rooms and their group delay, audio fan-out, static pages |
+| `shared/frame.js` | The audio frame: sequence number, capture time, codec, one packet (Opus, or PCM) |
+| `server/` | The relay: reference clock, rooms (what they use, their policy, their delay group), audio fan-out, static pages |
 | `deploy/` | Running the relay on a host, behind a reverse proxy |
 | `web/lab/` | Click test page: every device clicks on the same beat |
 | `lab/analyse-clicks.mjs` | Measures a one-microphone recording of the click test |
