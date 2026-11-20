@@ -42,6 +42,7 @@ test('reports jitter as spread and a drifting device as drift', () => {
   assert.ok(by[2].spreadMs > 3 && by[2].spreadMs < 9, `spread ${by[2].spreadMs}`)
   assert.ok(Math.abs(by[4].driftMsPerMin - 12) < 1.5, `drift ${by[4].driftMsPerMin}`)
   assert.ok(Math.abs(by[0].spreadMs) < 0.1)
+  assert.ok(by[2].wanderMs > 2 && by[4].wanderMs < 0.6, `wander: jittery ${by[2].wanderMs}, drifting ${by[4].wanderMs}`)
 })
 
 test('neighbouring pitches do not create a ghost device (a burst leaks into the next filter)', () => {

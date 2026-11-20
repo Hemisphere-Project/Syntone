@@ -13,6 +13,8 @@
 //
 // Options: --ref <slot> (default: lowest slot heard) · --json · --sr <Hz> (default 48000)
 import { spawnSync } from 'node:child_process'
+import { realpathSync } from 'node:fs'
+import { fileURLToPath } from 'node:url'
 import { PERIOD_MS, STAGGER_MS, MAX_SLOTS, BURST_MS, slotFreq } from '../shared/clicks.js'
 
 /** Matched-filter envelope for one pitch: |x ⋆ burst·e^{jωt}|, sampled every `hop` samples. */
@@ -67,7 +69,7 @@ const quantile = (a, q) => { const s = [...a].sort((p, r) => p - r); return s[Ma
 
 /**
  * @param {Float32Array} x mono samples
- * @returns {{ref:number, slots:Array<{slot,freq,clicks,medianMs,p05Ms,p95Ms,spreadMs,driftMsPerMin}>}}
+ * @returns {{ref:number, slots:Array<{slot,freq,clicks,medianMs,p05Ms,p95Ms,spreadMs,wanderMs,driftMsPerMin}>}}
  */
 export function analyse(x, sr, { ref = null } = {}) {
   const heard = []
@@ -101,7 +103,12 @@ export function analyse(x, sr, { ref = null } = {}) {
       drift = den > 0 ? (num / den) * 60 : 0
     }
     const p05 = quantile(offs, 0.05), p95 = quantile(offs, 0.95)
-    slots.push({ slot: s, freq: slotFreq(s), clicks: offs.length, medianMs: median(offs), p05Ms: p05, p95Ms: p95, spreadMs: p95 - p05, driftMsPerMin: drift })
+    // how much the offset moves from one click to the next: two copies of one sound whose offset
+    // keeps moving sound phasey even when the offset itself stays small
+    const steps = []
+    for (let i = 1; i < offs.length; i++) steps.push(Math.abs(offs[i] - offs[i - 1]))
+    const wander = steps.length ? quantile(steps, 0.95) : 0
+    slots.push({ slot: s, freq: slotFreq(s), clicks: offs.length, medianMs: median(offs), p05Ms: p05, p95Ms: p95, spreadMs: p95 - p05, wanderMs: wander, driftMsPerMin: drift })
   }
   return { ref, slots }
 }
@@ -113,7 +120,8 @@ function decode(file, sr) {
   return new Float32Array(r.stdout.buffer, r.stdout.byteOffset, Math.floor(r.stdout.byteLength / 4))
 }
 
-if (import.meta.url === `file://${process.argv[1]}`) {
+const invoked = () => { try { return realpathSync(process.argv[1]) === realpathSync(fileURLToPath(import.meta.url)) } catch { return false } }
+if (process.argv[1] && invoked()) {
   const args = process.argv.slice(2)
   const opt = (name, d) => { const i = args.indexOf('--' + name); if (i < 0) return d; const v = args[i + 1]; args.splice(i, 2); return v }
   const json = args.includes('--json'); if (json) args.splice(args.indexOf('--json'), 1)
@@ -126,12 +134,13 @@ if (import.meta.url === `file://${process.argv[1]}`) {
   if (json) { console.log(JSON.stringify({ file, seconds: x.length / sr, ...res }, null, 2)); process.exit(0) }
   if (!res.slots.length) { console.error('no click bursts found — was the room in « Staggered (record) » mode?'); process.exit(1) }
   console.log(`${file} — ${(x.length / sr).toFixed(1)} s, ${res.slots.length} device(s) heard, reference = slot ${res.ref}\n`)
-  console.log('slot  pitch   clicks   offset vs ref (median)   5%…95%            spread   drift')
+  console.log('slot  pitch   clicks   offset vs ref (median)   5%…95%            spread   wander   drift')
   for (const s of res.slots) {
     const sign = (v) => (v >= 0 ? '+' : '') + v.toFixed(2)
     console.log(
-      `${String(s.slot).padStart(4)}  ${String(s.freq).padStart(4)} Hz ${String(s.clicks).padStart(6)}   ${(sign(s.medianMs) + ' ms').padStart(22)}   ${(sign(s.p05Ms) + ' … ' + sign(s.p95Ms)).padEnd(17)} ${s.spreadMs.toFixed(2).padStart(6)} ms  ${sign(s.driftMsPerMin)} ms/min`
+      `${String(s.slot).padStart(4)}  ${String(s.freq).padStart(4)} Hz ${String(s.clicks).padStart(6)}   ${(sign(s.medianMs) + ' ms').padStart(22)}   ${(sign(s.p05Ms) + ' … ' + sign(s.p95Ms)).padEnd(17)} ${s.spreadMs.toFixed(2).padStart(6)} ms ${s.wanderMs.toFixed(2).padStart(5)} ms  ${sign(s.driftMsPerMin)} ms/min`
     )
   }
   console.log('\noffset > 0: that device is heard LATER than the reference. Raise its trim by that much (or find out why).')
+  console.log('wander: how much the offset moves from one click to the next (95 % of steps stay under it).')
 }

@@ -26,7 +26,10 @@ export const DEFAULTS = {
   keepRatio: 0.3,      // fit on this fraction of the window: the lowest-rtt samples
   minForSkew: 8,       // fewer selected samples than this: no skew, offset only
   minSpanMs: 15_000,   // selected samples must span this long before a skew is trusted
-  maxSkewPpm: 500,     // a fitted skew beyond this is a fit gone wrong, not a crystal
+  maxSkewPpm: 150,     // two crystals differ by tens of ppm: a fitted skew beyond this is a fit gone wrong
+  skewSigma: 3,        // and a skew smaller than this many times its own uncertainty is noise: use 0
+  stepMs: 50,          // a low-rtt sample this far from the fit (or 2 × its rtt, if larger) contradicts it…
+  stepCount: 3,        // …and this many in a row mean the clock STEPPED: forget everything before them
 }
 
 export class ClockSync {
@@ -34,6 +37,10 @@ export class ClockSync {
     this.o = { ...DEFAULTS, ...opts }
     this.samples = []            // { t: client time at mid-exchange, offset, rtt }
     this.fit = null              // { tRef, offset0, skew, n, minRtt, spanMs }
+    this.steps = 0               // how many times a clock step was detected
+    this._odd = 0                // consecutive low-rtt samples that contradict the fit
+    this._oddSince = 0           // client time of the first of them
+    this._residual = 0           // last low-rtt sample: how far it was from the fit, beyond its own rtt/2
   }
 
   /** Feed one ping/pong exchange. Returns the sample, or null if the timestamps are impossible. */
@@ -41,11 +48,32 @@ export class ClockSync {
     const rtt = (t3 - t0) - (t2 - t1)
     if (!(rtt >= 0) || !Number.isFinite(rtt)) return null
     const s = { t: (t0 + t3) / 2, offset: ((t1 - t0) + (t2 - t3)) / 2, rtt }
+    this._checkStep(s)
     this.samples.push(s)
     const horizon = s.t - this.o.windowMs
     while (this.samples.length > this.o.maxSamples || this.samples[0].t < horizon) this.samples.shift()
     this._refit()
     return s
+  }
+
+  /**
+   * A phone that sleeps pauses its monotonic clock while the socket may survive; a relay VM can be
+   * paused too. Afterwards every exchange disagrees with the fit by the length of the pause. Left
+   * alone, the window would blend old and new for two minutes while the bound still looked fine.
+   * Only exchanges that were NOT slow can testify: a slow one is expected to be off.
+   */
+  _checkStep(s) {
+    const f = this.fit
+    if (!f || s.rtt > 2 * f.minRtt + 5) return
+    const miss = Math.abs(s.offset - this.offsetAt(s.t))
+    this._residual = Math.max(0, miss - s.rtt / 2)
+    if (miss <= Math.max(this.o.stepMs, 2 * s.rtt)) { this._odd = 0; return }
+    if (this._odd++ === 0) this._oddSince = s.t
+    if (this._odd >= this.o.stepCount) {
+      const since = this._oddSince
+      this.samples = this.samples.filter((x) => x.t >= since)
+      this._odd = 0; this._residual = 0; this.steps++
+    }
   }
 
   _refit() {
@@ -66,8 +94,14 @@ export class ClockSync {
     if (best.length >= this.o.minForSkew && spanMs >= this.o.minSpanMs) {
       let stt = 0, sto = 0
       for (const s of best) { const w = 1 / (s.rtt / 2 + 0.5) ** 2; const dt = s.t - tRef; stt += w * dt * dt; sto += w * dt * (s.offset - oMean) }
-      if (stt > 0) skew = sto / stt
-      if (Math.abs(skew) * 1e6 > this.o.maxSkewPpm) skew = 0
+      if (stt > 0) {
+        skew = sto / stt
+        // uncertainty of that slope, from how far the points sit from the line
+        let sr = 0
+        for (const s of best) { const w = 1 / (s.rtt / 2 + 0.5) ** 2; sr += w * (s.offset - oMean - skew * (s.t - tRef)) ** 2 }
+        const se = Math.sqrt(sr / (best.length - 2) / stt)
+        if (Math.abs(skew) * 1e6 > this.o.maxSkewPpm || Math.abs(skew) < this.o.skewSigma * se) skew = 0
+      }
     }
     this.fit = { tRef, offset0: oMean, skew, n: best.length, minRtt, spanMs }
   }
@@ -91,7 +125,10 @@ export class ClockSync {
     return (tServer - f.offset0 + f.skew * f.tRef) / (1 + f.skew)
   }
 
-  /** What the UI shows. `boundMs` is the honest worst case: half the best round trip. */
+  /**
+   * What the UI shows. `boundMs` is the honest worst case: half the best round trip — or, when the
+   * latest good exchange disagrees with the fit by more than its own round trip explains, that gap.
+   */
   get stats() {
     const f = this.fit
     if (!f) return { ready: false, samples: 0 }
@@ -102,8 +139,9 @@ export class ClockSync {
       offsetMs: f.offset0,
       skewPpm: f.skew * 1e6,
       minRttMs: f.minRtt,
-      boundMs: f.minRtt / 2,
+      boundMs: Math.max(f.minRtt / 2, this._residual),
       spanMs: f.spanMs,
+      steps: this.steps,
     }
   }
 }

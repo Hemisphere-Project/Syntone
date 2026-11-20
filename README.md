@@ -8,18 +8,17 @@
 
 ## The idea
 
-Every piece of audio carries the time it was captured, on a clock all devices share. Every receiver plays it at `capture time + D − its own output latency`, where `D` is one delay for the whole group. Devices then agree with each other to within a few milliseconds, and the delay is a number you choose rather than whatever each device ends up with.
+Every piece of audio carries the time it was captured, on a clock all devices share. Every receiver hands it to its audio system at `capture time + D − its own output latency`, so that it is heard at `capture time + D`, where `D` is one delay for the whole group. Devices should then agree with each other within a few milliseconds (the target, tested in the first milestones), and the delay is a number you choose rather than whatever each device ends up with.
 
-What that can honestly promise:
+What the desk research expects. None of it is measured yet; the [plan](docs/plan.md) lists the experiment and pass mark for each line:
 
 | Situation | Delay | Devices agree within |
 |---|---|---|
 | Buffered playback | 0.5–10 s, chosen | 1–10 ms |
-| Live on venue WiFi | 40–100 ms | 1–10 ms |
-| Live, phone to phone over LTE | about 150–350 ms | 5–15 ms |
+| Live on venue WiFi, native receivers | 30–80 ms | 1–2 ms |
+| Live on venue WiFi, phones in a browser | about 70–200 ms | 1–10 ms |
+| Live, phone to phones over LTE | about 200–400 ms | 5–15 ms |
 | Live over LTE to Bluetooth speakers | about 450–600 ms | 10–20 ms after calibration |
-
-These are targets from desk research, not results. The [plan](docs/plan.md) lists the experiment and pass mark for each.
 
 ## What is here
 
@@ -29,7 +28,9 @@ These are targets from desk research, not results. The [plan](docs/plan.md) list
 | [`docs/research/`](docs/research/README.md) | Eight research reports the plan is built on |
 | [`docs/lab.md`](docs/lab.md) | How to measure sync between real devices with the click test |
 | `shared/clock.js` | Clock sync estimator: runs in the browser and in Node, small enough to port to an ESP32 |
+| `shared/beats.js` | Decides which clicks to queue on each pass, whatever the device's output delay |
 | `server/` | The relay: reference clock, rooms, static pages |
+| `deploy/` | Running the relay on a host, behind a reverse proxy |
 | `web/lab/` | Click test page: every device clicks on the same beat |
 | `lab/analyse-clicks.mjs` | Measures a one-microphone recording of the click test |
 

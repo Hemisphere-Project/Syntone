@@ -39,38 +39,32 @@
 <body>
 <main>
   <h1>Syntone lab — click test</h1>
-  <p class="lead">Every device in the room clicks on the same beat of the relay's clock. Put two phones side by side: one click means in sync, a flam means not.</p>
+  <p class="lead">Every device in the room clicks on the same beat of the relay's clock. Put two phones side by side: a single click means they agree within about 5 ms, a flam means they do not.</p>
 
   <button id="start" class="primary">Tap to join and unlock audio</button>
 
   <div id="live" class="hidden">
     <div id="flash">–</div>
+    <p id="note" class="dim" style="margin:8px 0 0; min-height: 1.2em"></p>
 
     <h2>This device <span id="who" class="dim"></span></h2>
     <div class="grid">
       <div class="kv"><b id="k-bound">–</b><span>clock: worst-case error (ms)</span></div>
       <div class="kv"><b id="k-rtt">–</b><span>best round trip (ms)</span></div>
       <div class="kv"><b id="k-skew">–</b><span>clock skew (ppm)</span></div>
-      <div class="kv"><b id="k-out">–</b><span>reported output latency (ms)</span></div>
-      <div class="kv"><b id="k-tsl">–</b><span>output latency per timestamp (ms)</span></div>
+      <div class="kv"><b id="k-out">–</b><span>output latency the browser reports (ms)</span></div>
+      <div class="kv"><b id="k-tsl">–</b><span>output latency its timestamp implies (ms)</span></div>
       <div class="kv"><b id="k-sr">–</b><span>sample rate · state</span></div>
     </div>
 
     <h2>Output timing on this device</h2>
     <div class="card">
       <div class="row" style="margin-bottom:10px">
-        <div style="flex:1; min-width: 180px">
-          <label for="mode">How the page maps the clock to the speaker</label>
-          <select id="mode">
-            <option value="timestamp">timestamp — browser's output timestamp</option>
-            <option value="latency">latency — currentTime + reported latency</option>
-            <option value="raw">raw — currentTime, no correction</option>
-          </select>
-        </div>
-        <div style="width: 120px">
+        <div style="width: 140px">
           <label for="trimN">Trim (ms)</label>
           <input id="trimN" type="number" step="1" value="0">
         </div>
+        <p class="dim" style="flex:1; min-width:180px; margin:0">Kept on this device between visits. Set it to 0 before a measurement.</p>
       </div>
       <label for="trim">Trim: raise it when this device is heard late (Bluetooth speaker)</label>
       <input id="trim" type="range" min="-100" max="500" step="1" value="0">
@@ -83,15 +77,22 @@
         <button id="b-unison" class="on">Unison (listen)</button>
         <button id="b-stagger">Staggered (record)</button>
       </div>
-      <p class="dim" style="margin:10px 0 0">Unison: all devices click together, judge by ear. Staggered: each device clicks in its own time slot and pitch, so one microphone recording can be measured with <code>lab/analyse-clicks.mjs</code>.</p>
+      <p class="dim" style="margin:10px 0 12px">Unison: all devices click together, judge by ear. Staggered: each device clicks in its own time slot and pitch, so one microphone recording can be measured with <code>lab/analyse-clicks.mjs</code>.</p>
+      <label for="mode">How pages map the clock to the speaker</label>
+      <select id="mode">
+        <option value="timestamp">timestamp — the browser's output timestamp</option>
+        <option value="latency">latency — audio clock + reported latencies</option>
+        <option value="raw">raw — audio clock, no correction</option>
+      </select>
     </div>
 
     <h2>Devices in the room</h2>
     <div class="card scroll">
       <table id="roster"><thead><tr>
-        <th>slot</th><th>device</th><th>bound</th><th>rtt</th><th>skew</th><th>mode</th><th>out</th><th>ts-lat</th><th>trim</th><th>sr</th>
+        <th>slot</th><th>device</th><th>bound</th><th>rtt</th><th>skew</th><th>pair</th><th>mode</th><th>base</th><th>out</th><th>ts-lat</th><th>trim</th><th>skips</th><th>sr</th>
       </tr></thead><tbody></tbody></table>
     </div>
+    <p class="dim" style="margin:8px 0 0; font-size:13px">ms unless said. <b>bound</b>: worst-case clock error · <b>pair</b>: how much later the first ping of a pair lands than the second (radio wake-up cost on LTE) · <b>base</b> + <b>out</b>: latencies the browser reports · <b>ts-lat</b>: what its timestamp implies · <b>skips</b>: beats that could not be queued in time · a mode shown as a→b fell back.</p>
     <div class="row" style="margin-top:10px"><button id="b-copy">Copy room snapshot (JSON)</button><span id="copied" class="dim"></span></div>
   </div>
 </main>
