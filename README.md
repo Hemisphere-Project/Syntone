@@ -40,6 +40,9 @@ The first use is the hardest on privacy and simplicity: people's own phones at p
 | `shared/ring.js` | Receiver: frames placed by sequence number, a missing one a hole of silence, capture time → stream sample |
 | `shared/player.js` | Receiver: holds capture + D − L on the device's own clock, follows drift gently, plays through gaps and rejoins on time |
 | `web/js/player-worklet.js` | The player in an AudioWorklet: frames, time base, L and D in through its port; playout error and dropouts out |
+| `shared/framer.js` | Sender: captured blocks of any size cut into 20 ms frames, each named by its first sample |
+| `shared/pcm.js` | The fallback codec: 16-bit PCM, little-endian, interleaved |
+| `shared/streamclicks.js` | Stream click test: the click pattern written into the stream by capture stamp, and the receiver's gate to its own slot |
 | `lab/analyse-clicks.mjs` | Measures a one-microphone recording of the click test |
 
 ## Try the click test
