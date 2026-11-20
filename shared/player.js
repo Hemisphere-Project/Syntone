@@ -25,7 +25,8 @@
 // operator's trim, a measurement), never a socket or a setting.
 //
 // Pure and allocation-free after construction: the same code runs in Node tests on simulated
-// clocks and in the audio thread (AudioWorklet).
+// clocks and in the audio thread — web/js/player-worklet.js wraps it with a FrameRing, takes
+// frames, the time base, L and D through its port, and reports `stats`.
 
 export const DEFAULTS = {
   delayMs: 150,           // D: the group's delay

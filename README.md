@@ -32,6 +32,10 @@ What the desk research expects. None of it is measured yet; the [plan](docs/plan
 | `server/` | The relay: reference clock, rooms, static pages |
 | `deploy/` | Running the relay on a host, behind a reverse proxy |
 | `web/lab/` | Click test page: every device clicks on the same beat |
+| `shared/stamps.js` | Sender: capture stamps fitted on (sample count, relay time), so they follow the sender's real rate and never jump |
+| `shared/ring.js` | Receiver: frames placed by sequence number, a missing one a hole of silence, capture time → stream sample |
+| `shared/player.js` | Receiver: holds capture + D − L on the device's own clock, follows drift gently, plays through gaps and rejoins on time |
+| `web/js/player-worklet.js` | The player in an AudioWorklet: frames, time base, L and D in through its port; playout error and dropouts out |
 | `lab/analyse-clicks.mjs` | Measures a one-microphone recording of the click test |
 
 ## Try the click test
