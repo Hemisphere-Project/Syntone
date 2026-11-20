@@ -2,21 +2,34 @@
 # Runs ON the host, inside the deploy-only git checkout of this repo.
 # Pull main, install, test, reload the relay under pm2.
 set -euo pipefail
-cd "$(dirname "$0")/.."
 
-git fetch --quiet origin main
-git reset --quiet --hard origin/main   # deploy-only checkout: never edit on the host
-npm ci --omit=dev --no-audit --no-fund --loglevel=error
-npm test --silent
-pm2 startOrReload deploy/ecosystem.config.cjs --update-env >/dev/null
-pm2 save >/dev/null
-port=$(node -p "require('./deploy/ecosystem.config.cjs').apps[0].env.PORT")
-# the process needs a moment to listen; a relay that does not answer within 10 s is a failed deploy
-for i in $(seq 1 20); do
-  code=$(curl -s -o /dev/null -w '%{http_code}' "http://127.0.0.1:${port}/lab/" || true)
-  [ "$code" = 200 ] && break
-  sleep 0.5
-done
-echo "relay: $code"
-[ "$code" = 200 ] || { echo "relay does not answer on :${port} — see: pm2 logs syntone" >&2; exit 1; }
-echo "deployed $(git rev-parse --short HEAD)"
+# Everything lives in one function, called on the last line: the pull below may rewrite this very
+# file, and bash would otherwise go on reading the new text from the old position.
+main() {
+  cd "$(dirname "$0")/.."
+
+  git fetch --quiet origin main
+  git reset --quiet --hard origin/main   # deploy-only checkout: never edit on the host
+  npm ci --omit=dev --no-audit --no-fund --loglevel=error
+  npm test --silent >/dev/null || { echo "tests fail — not reloading" >&2; exit 1; }
+
+  local want have port code=000
+  want="$PWD/$(node -p "require('./deploy/ecosystem.config.cjs').apps[0].script")"
+  have=$(pm2 jlist 2>/dev/null | node -e "let s='';process.stdin.on('data',d=>s+=d).on('end',()=>{try{const a=JSON.parse(s).find(p=>p.name==='syntone');console.log(a?a.pm2_env.pm_exec_path:'')}catch{console.log('')}})")
+  # a reload keeps the script path pm2 first saw: if the entry point moved, start afresh
+  if [ -n "$have" ] && [ "$have" != "$want" ]; then pm2 delete syntone >/dev/null; fi
+  pm2 startOrReload deploy/ecosystem.config.cjs --update-env >/dev/null
+  pm2 save >/dev/null
+
+  # the process needs a moment to listen; a relay that does not answer within 10 s is a failed deploy
+  port=$(node -p "require('./deploy/ecosystem.config.cjs').apps[0].env.PORT")
+  for _ in $(seq 1 20); do
+    code=$(curl -s -o /dev/null -w '%{http_code}' "http://127.0.0.1:${port}/lab/" || true)
+    [ "$code" = 200 ] && break
+    sleep 0.5
+  done
+  echo "relay: $code"
+  [ "$code" = 200 ] || { echo "relay does not answer on :${port} — see: pm2 logs syntone" >&2; exit 1; }
+  echo "deployed $(git rev-parse --short HEAD)"
+}
+main "$@"
