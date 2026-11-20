@@ -3,7 +3,7 @@ module.exports = {
   apps: [
     {
       name: 'syntone',
-      script: 'server/index.js',
+      script: 'server/main.js',
       cwd: __dirname + '/..',
       env: {
         PORT: 3002,

@@ -1,6 +1,6 @@
 # Deploying the relay
 
-The relay is one Node process (`server/index.js`) kept alive by pm2, behind any reverse proxy that terminates TLS.
+The relay is one Node process (`server/main.js`) kept alive by pm2, behind any reverse proxy that terminates TLS.
 
 ```sh
 # once, on the host
