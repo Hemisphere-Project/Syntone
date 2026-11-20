@@ -43,6 +43,10 @@ The first use is the hardest on privacy and simplicity: people's own phones at p
 | `shared/framer.js` | Sender: captured blocks of any size cut into 20 ms frames, each named by its first sample |
 | `shared/pcm.js` | The fallback codec: 16-bit PCM, little-endian, interleaved |
 | `shared/streamclicks.js` | Stream click test: the click pattern written into the stream by capture stamp, and the receiver's gate to its own slot |
+| `shared/sender.js` | Sender core: capture blocks → stamped 20 ms frames → codec → transport; the test pattern in test mode |
+| `web/send/` | Sender page: test pattern, microphone or a file → Opus (WebCodecs) or PCM → the relay; sets the room's delay |
+| `web/js/capture-worklet.js` | Capture in an AudioWorklet: blocks of samples, counted from the start, out to the page |
+| `web/js/codecs.js` | Opus through WebCodecs behind the sender core's encoder method; PCM as the fallback |
 | `lab/analyse-clicks.mjs` | Measures a one-microphone recording of the click test |
 
 ## Try the click test

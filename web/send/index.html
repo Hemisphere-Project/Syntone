@@ -1,0 +1,63 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Syntone — send</title>
+<link rel="icon" href="data:,">
+<link rel="stylesheet" href="/css/syntone.css">
+</head>
+<body>
+<main>
+  <h1>Syntone — send</h1>
+  <p class="lead">One source for the room: every receiver plays it at the same moment, the room's delay after it was captured. Chrome on a laptop or an Android phone.</p>
+
+  <div class="card">
+    <div class="grid">
+      <div>
+        <label for="source">Source</label>
+        <select id="source">
+          <option value="test">Test pattern — the stream click test</option>
+          <option value="mic">Microphone</option>
+          <option value="mic+test">Microphone with the test pattern over it</option>
+          <option value="file">A file from this device (loops)</option>
+        </select>
+      </div>
+      <div>
+        <label for="slots">Test pattern: slots</label>
+        <input id="slots" type="number" min="1" max="8" step="1" value="8">
+      </div>
+      <div>
+        <label for="channels">Channels</label>
+        <select id="channels"><option value="1">mono</option><option value="2">stereo</option></select>
+      </div>
+      <div>
+        <label for="delay">Room delay D (ms)</label>
+        <input id="delay" type="number" min="10" max="30000" step="10">
+      </div>
+    </div>
+    <div id="filerow" class="hidden" style="margin-top:10px"><input id="file" type="file" accept="audio/*"></div>
+    <div class="row" style="margin-top:12px"><label style="margin:0"><input id="monitor" type="checkbox"> hear the source here</label></div>
+  </div>
+  <p></p>
+  <button id="start" class="primary">Start sending</button>
+  <p id="note" class="dim" style="margin:8px 0 0; min-height: 1.2em"></p>
+
+  <div id="live" class="hidden">
+    <h2>Sending to room <span id="roomname" class="dim"></span></h2>
+    <div class="grid">
+      <div class="kv"><b id="k-codec">–</b><span>codec · channels</span></div>
+      <div class="kv"><b id="k-sent">–</b><span>frames sent · skipped</span></div>
+      <div class="kv"><b id="k-rate">–</b><span>kbit/s on the wire</span></div>
+      <div class="kv"><b id="k-ppm">–</b><span>capture clock vs relay (ppm)</span></div>
+      <div class="kv"><b id="k-jumps">–</b><span>stamp jumps · timeline steps</span></div>
+      <div class="kv"><b id="k-bound">–</b><span>clock: worst-case error (ms)</span></div>
+      <div class="kv"><b id="k-rx">–</b><span>receivers in the room</span></div>
+      <div class="kv"><b id="k-d">–</b><span>room delay D (ms)</span></div>
+    </div>
+    <div class="row" style="margin-top:12px"><button id="stop">Stop</button></div>
+  </div>
+</main>
+<script type="module" src="./send.js"></script>
+</body>
+</html>

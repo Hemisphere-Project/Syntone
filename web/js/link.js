@@ -59,6 +59,7 @@ export class Link extends EventTarget {
 
   _connect() {
     const ws = (this.ws = new WebSocket(this.url))
+    ws.binaryType = 'arraybuffer'          // audio frames: read synchronously, no Blob round trip
     ws.onopen = () => {
       if (ws !== this.ws) return
       // A new connection may be a new network path (WiFi → LTE): old samples would poison the fit.
@@ -176,6 +177,18 @@ export class Link extends EventTarget {
 
   /** Sets D for this device's group (null: back to the relay's default). */
   setDelay(delayMs) { if (this.ws?.readyState === 1) this.ws.send(JSON.stringify({ t: 'delay', delayMs })) }
+
+  /**
+   * One audio frame to the relay (the transport seam's `send`, architecture §6). False when the socket
+   * is not open or already holds more than `maxBacklog` bytes: a frame queued behind others would
+   * reach every receiver late, so it is skipped instead.
+   */
+  sendFrame(bytes, maxBacklog = 32 * 1024) {
+    const ws = this.ws
+    if (ws?.readyState !== 1 || ws.bufferedAmount > maxBacklog) return false
+    ws.send(bytes)
+    return true
+  }
 
   setState(patch) { if (this.ws?.readyState === 1) this.ws.send(JSON.stringify({ t: 'state', patch })) }
   report(report) { if (this.ws?.readyState === 1) this.ws.send(JSON.stringify({ t: 'report', report })) }
