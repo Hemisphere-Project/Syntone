@@ -16,7 +16,6 @@
 // and it must not keep its slot. Clients ping about once per second.
 import http from 'node:http'
 import { readFile } from 'node:fs/promises'
-import { realpathSync } from 'node:fs'
 import { extname, join, normalize, resolve, sep } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { WebSocketServer } from 'ws'
@@ -179,10 +178,4 @@ export function start({ port = PORT, host = HOST, silentMs = SILENT_MS } = {}) {
   }, 1000)
   server.on('close', () => clearInterval(tick))
   return new Promise((ok) => server.listen(port, host, () => ok({ server, wss, port: server.address().port })))
-}
-
-const invoked = () => { try { return realpathSync(process.argv[1]) === realpathSync(fileURLToPath(import.meta.url)) } catch { return false } }
-if (process.argv[1] && invoked()) {
-  const { port } = await start()
-  console.log(`syntone relay on http://${HOST}:${port}  (lab: /lab/)`)
 }
