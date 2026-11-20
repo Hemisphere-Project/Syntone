@@ -1,6 +1,6 @@
 # Deploying the relay
 
-The relay is one Node process (`server/index.js`) kept alive by pm2, behind any reverse proxy that terminates TLS.
+The relay is one Node process (`server/main.js`) kept alive by pm2, behind any reverse proxy that terminates TLS.
 
 ```sh
 # once, on the host
@@ -27,5 +27,7 @@ location / {
     proxy_buffering off;
 }
 ```
+
+Turn the access log off for this host (`access_log off;`), on every hop: the relay keeps no record of who connects, and the proxies in front of it should not either.
 
 Every proxy hop adds a little delay to each clock exchange, the same in both directions, so it costs latency but not sync. The later low-delay work (WebTransport) needs UDP 443 straight to the relay, which a plain HTTP reverse proxy does not carry.
