@@ -65,7 +65,7 @@ async function go() {
     try { wake = await navigator.wakeLock?.request('screen') } catch {}
     $('go').classList.add('hidden')
     $('live').classList.remove('hidden')
-    note(test ? `click test: this phone is slot ${link.slot + 1}` : '')
+    note(test ? `click test: this phone is slot ${link.slot}` : '')
   } catch (e) {
     note(String(e.message || e), true)
     stop()
@@ -103,7 +103,7 @@ function report() {
   link.report({
     frames: s.decoded, lost: s.lost, late: stats?.frames?.late ?? 0,
     dropouts: stats?.dropouts ?? 0, jumps: stats?.jumps ?? 0,
-    errorMs: stats ? Math.round(stats.smoothedMs * 100) / 100 : null, locked: !!stats?.locked,
+    errorMs: Number.isFinite(stats?.smoothedMs) ? Math.round(stats.smoothedMs * 100) / 100 : null, locked: !!stats?.locked,
   })
 }
 

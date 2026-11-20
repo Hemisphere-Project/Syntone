@@ -144,8 +144,9 @@ function renderRoster(peers) {
     const r = p.report || {}
     const tr = tb.insertRow()
     const mode = r.mode ? (r.modeUsed && r.modeUsed !== r.mode ? `${r.mode}→${r.modeUsed}` : r.mode) : '–'
-    const cells = [p.slot, p.name + (p.id === link.id ? ' ◀' : ''), fmt(r.boundMs), fmt(r.minRttMs), fmt(r.skewPpm), fmt(r.pairOffsetMs), mode,
-      fmt(r.baseLatencyMs), fmt(r.outputLatencyMs), fmt(r.timestampLatencyMs), fmt(r.trimMs, 0), r.skipped ?? '–', r.sampleRate ?? '–']
+    const cells = [p.slot, (p.name || p.role) + (p.id === link.id ? ' ◀' : ''), fmt(r.boundMs), fmt(r.minRttMs), fmt(r.skewPpm), fmt(r.pairOffsetMs), mode,
+      fmt(r.baseLatencyMs), fmt(r.outputLatencyMs), fmt(r.timestampLatencyMs), fmt(r.trimMs, 0), r.skipped ?? '–', r.sampleRate ?? '–',
+      fmt(r.errorMs, 2), r.dropouts ?? '–', r.lost ?? '–', r.locked === undefined ? '–' : r.locked ? 'yes' : 'no']
     for (const c of cells) tr.insertCell().textContent = c
   }
 }

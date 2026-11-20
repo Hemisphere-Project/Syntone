@@ -89,10 +89,10 @@
     <h2>Devices in the room</h2>
     <div class="card scroll">
       <table id="roster"><thead><tr>
-        <th>slot</th><th>device</th><th>bound</th><th>rtt</th><th>skew</th><th>pair</th><th>mode</th><th>base</th><th>out</th><th>ts-lat</th><th>trim</th><th>skips</th><th>sr</th>
+        <th>slot</th><th>device</th><th>bound</th><th>rtt</th><th>skew</th><th>pair</th><th>mode</th><th>base</th><th>out</th><th>ts-lat</th><th>trim</th><th>skips</th><th>sr</th><th>err</th><th>drop</th><th>lost</th><th>lock</th>
       </tr></thead><tbody></tbody></table>
     </div>
-    <p class="dim" style="margin:8px 0 0; font-size:13px">ms unless said. <b>bound</b>: worst-case clock error · <b>pair</b>: how much later the first ping of a pair lands than the second (radio wake-up cost on LTE) · <b>base</b> + <b>out</b>: latencies the browser reports · <b>ts-lat</b>: what its timestamp implies · <b>skips</b>: beats that could not be queued in time · a mode shown as a→b fell back.</p>
+    <p class="dim" style="margin:8px 0 0; font-size:13px">ms unless said. <b>bound</b>: worst-case clock error · <b>pair</b>: how much later the first ping of a pair lands than the second (radio wake-up cost on LTE) · <b>base</b> + <b>out</b>: latencies the browser reports · <b>ts-lat</b>: what its timestamp implies · <b>skips</b>: beats that could not be queued in time · a mode shown as a→b fell back. Stream receivers (the listen page): <b>err</b>: playout error, smoothed · <b>drop</b>: audio blocks played as silence · <b>lost</b>: frames that never arrived · <b>lock</b>: the player holds the room's time.</p>
     <div class="row" style="margin-top:10px"><button id="b-copy">Copy room snapshot (JSON)</button><span id="copied" class="dim"></span></div>
   </div>
 </main>
