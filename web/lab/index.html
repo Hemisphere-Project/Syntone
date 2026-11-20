@@ -1,0 +1,100 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Syntone lab — click test</title>
+<link rel="icon" href="data:,">
+<style>
+  :root { --bg:#0e1116; --fg:#e8eaed; --dim:#8b93a1; --line:#262c36; --card:#161b22; --acc:#ffb000; --ok:#3ecf8e; --bad:#ff6b6b; }
+  @media (prefers-color-scheme: light) { :root { --bg:#f6f7f9; --fg:#14181f; --dim:#5b6472; --line:#d9dde3; --card:#fff; --acc:#b86e00; --ok:#0f8a55; --bad:#c62828; } }
+  * { box-sizing: border-box; }
+  html, body { margin:0; background:var(--bg); color:var(--fg); font:15px/1.45 system-ui, -apple-system, "Segoe UI", sans-serif; }
+  main { max-width: 760px; margin: 0 auto; padding: 16px; }
+  h1 { font-size: 20px; margin: 4px 0 2px; } h2 { font-size: 13px; text-transform: uppercase; letter-spacing: .06em; color: var(--dim); margin: 22px 0 8px; }
+  p.lead { color: var(--dim); margin: 0 0 14px; }
+  .card { background: var(--card); border:1px solid var(--line); border-radius: 10px; padding: 12px 14px; }
+  button { font: inherit; padding: 12px 18px; border-radius: 10px; border:1px solid var(--line); background: var(--card); color: var(--fg); }
+  button.primary { background: var(--acc); color:#111; border-color: transparent; font-weight: 600; width: 100%; font-size: 17px; }
+  button.on { outline: 2px solid var(--acc); }
+  .row { display:flex; gap:10px; align-items:center; flex-wrap: wrap; }
+  .grid { display:grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap:8px; }
+  .kv { border:1px solid var(--line); border-radius:8px; padding:8px 10px; }
+  .kv b { display:block; font: 600 18px/1.2 ui-monospace, Menlo, monospace; font-variant-numeric: tabular-nums; }
+  .kv span { color: var(--dim); font-size: 12px; }
+  #flash { height: 54px; border-radius: 10px; border:1px solid var(--line); display:flex; align-items:center; justify-content:center; font: 600 22px ui-monospace, monospace; transition: background 120ms ease-out; }
+  #flash.hit { background: var(--acc); color:#111; transition: none; }
+  #flash.hit.accent { background: var(--ok); }
+  label { display:block; color: var(--dim); font-size: 12px; margin-bottom: 4px; }
+  select, input[type=number] { font: inherit; padding: 8px; border-radius:8px; border:1px solid var(--line); background: var(--bg); color: var(--fg); width: 100%; }
+  input[type=range] { width: 100%; }
+  table { width:100%; border-collapse: collapse; font: 12px ui-monospace, Menlo, monospace; }
+  th, td { text-align: right; padding: 5px 6px; border-bottom:1px solid var(--line); white-space: nowrap; }
+  th:first-child, td:first-child, th:nth-child(2), td:nth-child(2) { text-align:left; }
+  .scroll { overflow-x: auto; }
+  .ok { color: var(--ok); } .bad { color: var(--bad); } .dim { color: var(--dim); }
+  .hidden { display:none; }
+</style>
+</head>
+<body>
+<main>
+  <h1>Syntone lab — click test</h1>
+  <p class="lead">Every device in the room clicks on the same beat of the relay's clock. Put two phones side by side: one click means in sync, a flam means not.</p>
+
+  <button id="start" class="primary">Tap to join and unlock audio</button>
+
+  <div id="live" class="hidden">
+    <div id="flash">–</div>
+
+    <h2>This device <span id="who" class="dim"></span></h2>
+    <div class="grid">
+      <div class="kv"><b id="k-bound">–</b><span>clock: worst-case error (ms)</span></div>
+      <div class="kv"><b id="k-rtt">–</b><span>best round trip (ms)</span></div>
+      <div class="kv"><b id="k-skew">–</b><span>clock skew (ppm)</span></div>
+      <div class="kv"><b id="k-out">–</b><span>reported output latency (ms)</span></div>
+      <div class="kv"><b id="k-tsl">–</b><span>output latency per timestamp (ms)</span></div>
+      <div class="kv"><b id="k-sr">–</b><span>sample rate · state</span></div>
+    </div>
+
+    <h2>Output timing on this device</h2>
+    <div class="card">
+      <div class="row" style="margin-bottom:10px">
+        <div style="flex:1; min-width: 180px">
+          <label for="mode">How the page maps the clock to the speaker</label>
+          <select id="mode">
+            <option value="timestamp">timestamp — browser's output timestamp</option>
+            <option value="latency">latency — currentTime + reported latency</option>
+            <option value="raw">raw — currentTime, no correction</option>
+          </select>
+        </div>
+        <div style="width: 120px">
+          <label for="trimN">Trim (ms)</label>
+          <input id="trimN" type="number" step="1" value="0">
+        </div>
+      </div>
+      <label for="trim">Trim: raise it when this device is heard late (Bluetooth speaker)</label>
+      <input id="trim" type="range" min="-100" max="500" step="1" value="0">
+    </div>
+
+    <h2>Room <span id="roomname" class="dim"></span> — applies to every device</h2>
+    <div class="card">
+      <div class="row">
+        <button id="b-run">Clicks: on</button>
+        <button id="b-unison" class="on">Unison (listen)</button>
+        <button id="b-stagger">Staggered (record)</button>
+      </div>
+      <p class="dim" style="margin:10px 0 0">Unison: all devices click together, judge by ear. Staggered: each device clicks in its own time slot and pitch, so one microphone recording can be measured with <code>lab/analyse-clicks.mjs</code>.</p>
+    </div>
+
+    <h2>Devices in the room</h2>
+    <div class="card scroll">
+      <table id="roster"><thead><tr>
+        <th>slot</th><th>device</th><th>bound</th><th>rtt</th><th>skew</th><th>mode</th><th>out</th><th>ts-lat</th><th>trim</th><th>sr</th>
+      </tr></thead><tbody></tbody></table>
+    </div>
+    <div class="row" style="margin-top:10px"><button id="b-copy">Copy room snapshot (JSON)</button><span id="copied" class="dim"></span></div>
+  </div>
+</main>
+<script type="module" src="./lab.js"></script>
+</body>
+</html>

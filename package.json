@@ -1,0 +1,22 @@
+{
+  "name": "syntone",
+  "version": "0.0.1",
+  "description": "FM-like synchronised audio broadcast over WiFi / LTE: one live source, a fleet of phones, ESP32 and Raspberry Pi playing in sync with controlled latency (research)",
+  "type": "module",
+  "private": true,
+  "license": "GPL-3.0",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/Hemisphere-Project/Syntone.git"
+  },
+  "engines": {
+    "node": ">=20"
+  },
+  "scripts": {
+    "start": "node server/index.js",
+    "test": "node --test"
+  },
+  "dependencies": {
+    "ws": "^8.18.0"
+  }
+}
