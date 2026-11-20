@@ -12,6 +12,14 @@ An FM transmitter and a handful of FM receivers give you something simple and pr
 - **Outputs**: a jack, a built-in speaker, and most often a Bluetooth speaker.
 - **Network**: WiFi and 4G/LTE, through a small hosted relay.
 
+### Who listens, and what that rules out (decided 2026-11-20)
+
+Receivers are people's own phones, at public gatherings, demonstrations included, where being located or tracked is a real concern. Three rules follow, and they outrank convenience for the builders:
+
+- **Joining is one link or QR code and one tap.** Nothing to configure, no advanced setting, no tuning by the listener. Whatever a device needs (its output latency, a network to join), the page or the app finds or does by itself.
+- **Nothing that locates or identifies.** No account, no location permission, no device details shared with other listeners, no record of who listened. The microphone, if calibration ever needs it, is asked for explicitly, used on the device, and never sent anywhere.
+- **Web page first.** A native app is possible later, only where it brings a measured advantage a page cannot. If a route needs special connectivity or settings, the app handles them, not the listener.
+
 ### What the desk research expects (not measured)
 
 FM is about 0 ms and its receivers are passive. IP is neither.
@@ -57,7 +65,7 @@ Four errors add up, and each has its own track of work:
 |---|---|---|
 | Clock: devices disagree on what time it is | 5–100 ms | NTP-style exchange with the relay, keeping only the fastest round trips, fitted for drift ([shared/clock.js](../shared/clock.js)). On LTE, pings go in pairs: the first wakes the radio, the second measures |
 | Receiver audio clock: each sound card runs slightly fast or slow | 3 ms per minute at 50 ppm | The player measures its own error and resamples. It follows the device's steady drift gently (tens of ppm), and keeps the full ±500 ppm range for recovery only |
-| Output latency: L(device) is unknown | 5–40 ms wired, 100–300 ms Bluetooth | What the browser reports, then a per-device trim (a manual correction in ms), then calibration by microphone |
+| Output latency: L(device) is unknown | 5–40 ms wired, 100–300 ms Bluetooth | What the browser reports, then a calibration the page runs by itself (by microphone, opt-in). A manual trim, a correction in ms, exists for the lab and for operators; a listener is never asked to set one |
 | Sender: its sound card has a rate of its own, and its input has a latency | 3 ms per minute; 10–40 ms | Capture times come from a line fitted through (sample count, relay time), so they are smooth and advance at the sender's real rate; receivers then absorb it with their own drift. The sender's input latency is measured once per sender and declared as part of D |
 
 The receiver owns its playout. This is how Snapcast, AirPlay 2 and Sendspin (an open multi-room protocol from the Open Home Foundation) work, and it is why stock WebRTC is not the foundation here: it makes each receiver play as early as *it* can, with its own adaptive buffer, built for speech, not for agreeing with its neighbours.
@@ -104,6 +112,22 @@ The brief allows trading audio quality for latency. The research answer: on LTE,
 | WebTransport datagrams | Candidate live transport | In every major browser since Safari 26.4; avoids TCP stalls on LTE |
 | HLS, Icecast | Ruled out | Seconds of delay, no sync |
 | Media-element `playbackRate` steering | Ruled out | Audible pitch steps, glitches on iOS |
+
+### Other routes kept open
+
+WebRTC and FlanerieMozaic's sync were the starting candidates. These are the others, ranked by the rules of §1. The last-hop rows marked † come from the project's own reasoning and have not been through desk research yet.
+
+| Route | What it would bring | Standing |
+|---|---|---|
+| WebRTC as transport with our own playout (frames tapped before WebRTC's buffer) | WebRTC's NAT traversal and servers, with timing still ours | Joins the transport comparison of M3 |
+| Media over QUIC | Fan-out to thousands through shared relays | Specification still moving; revisit at M7 |
+| SRT or RIST, two SIM cards on the sender | A sender uplink that survives one bad network | With the Pi sender, M6 |
+| Satellite time (GPS) as the shared clock | Removes the LTE clock bias entirely | Needs a native app **and location permission**: against the rules of §1. Only ever opt-in, never relied on; fine for the studio's own Pi and ESP32 receivers |
+| A local relay on site (a Pi with a hotspot and an LTE uplink) | Devices in one space sync over local WiFi; LTE then only sets the delay | Joining a hotspot is a setting: only acceptable if an app does it for the listener. Natural for the studio's own receivers (M5) |
+| LTE as trunk, local radio as last hop † (Auracast, or a real FM transmitter) | One device depends on LTE; the space is fed by radio, in sync by construction | Spike in M4/M5. Auracast needs LE Audio earbuds or speakers and cannot be sent or tuned from an iPhone alone |
+| Phone-to-phone local links † (WiFi Aware, Multipeer Connectivity) | Nearby phones relay to each other with no infrastructure | Native only, Android and iOS do not interoperate. Later, if at all |
+| Peer-to-peer forwarding between listeners | No central relay to fail or to pay for | Peers learn each other's network addresses: between listeners' own phones that breaks the second rule of §1, unless traffic is relayed. Fine between the operator's devices |
+| Cellular broadcast (LTE Broadcast, 5G Broadcast) † | The operator-grade equivalent of FM | Needs an operator, almost no handsets: ruled out |
 
 ## 4. Milestones
 
@@ -154,17 +178,17 @@ The same player with D at 2–10 s: a file played in sync, a live input held bac
 
 - Also here: **30 receivers** (real phones plus headless clients) holding M1's sync, since D is set by the worst of them; and **Sendspin measured as a baseline** (its reference server and browser player, phones on LTE, same click method).
 - **Pass**: within 5 ms of the shared timeline 100 ms after data returns; the matrix says, per platform, whether a web page is enough.
-- **Decides**: whether receivers need a thin native shell (the studio already ships a Cordova app).
+- **Decides**: what, if anything, a native app would add for listeners (the studio already ships a Cordova app). The page stays the default way in.
 
 ### M3 — Push the delay down
 
-A transport shoot-out on real LTE paths (static, walking, handover): WebSocket, WebTransport datagrams, WebRTC DataChannel. 10 ms frames. Against loss, either the previous frame carried again in each packet, or a WebAssembly Opus decoder that can conceal a missing frame (the browser's built-in decoder cannot). Frame size, bitrate, mono or stereo compared by ear. A stock LiveKit room as the yardstick.
+A transport shoot-out on real LTE paths (static, walking, handover, and inside a crowd, where cells are loaded): WebSocket, WebTransport datagrams, WebRTC DataChannel, WebRTC with our own playout. 10 ms frames. Against loss, either the previous frame carried again in each packet, or a WebAssembly Opus decoder that can conceal a missing frame (the browser's built-in decoder cannot). Frame size, bitrate, mono or stereo compared by ear. A stock LiveKit room as the yardstick.
 
 - **Pass**: D at or under 250 ms standing still and 400 ms walking or through a handover, with M1's bar on dropouts (one per 10 minutes, after redundancy) and M1's sync.
 
 ### M4 — Bluetooth
 
-A per-device, per-route latency that is measured, not believed: a reference phone's microphone times each receiver's chirps. Recalibration when the speaker reconnects or changes codec. A side look at Auracast, the only Bluetooth mode with a defined, shared delay.
+A per-device, per-route latency that is measured, not believed, and found without the listener tuning anything. Two routes: an operator's reference phone times each receiver's chirps; or each phone calibrates itself with its own microphone, asked for explicitly and processed on the device. Recalibration when the speaker reconnects or changes codec. A side look at Auracast, the only Bluetooth mode with a defined, shared delay, as a last hop fed over LTE.
 
 - **Pass**: Bluetooth receivers within 10 ms of each other and of their group's timeline, 95 % of the time, over 30 minutes; after a reconnect, automatic recalibration restores that within 10 s.
 
@@ -172,6 +196,7 @@ A per-device, per-route latency that is measured, not believed: a reference phon
 
 ESP32-S3 with an I2S amplifier; Pi with a DAC. First question: speak Sendspin on the wire and reuse its ESP32 and Pi players, or keep our own frame and port the player.
 
+- **A Pi as local relay**: hotspot, LTE uplink, time anchor for the devices around it. Measured against the hosted relay for devices sharing a space.
 - **Getting them online**, in order of preference: a phone's WiFi hotspot; a Pi tethered to a phone over USB (works with Android and iPhone); an ESP32 tethered over USB as a spike, Android only (unproven); iPhone-to-ESP32 over USB is ruled out by the research.
 - **Pass**: embedded receivers within 2 ms of each other on WiFi, within 5 ms of phones.
 
@@ -182,11 +207,11 @@ ESP32-S3 with an I2S amplifier; Pi with a DAC. First question: speak Sendspin on
 
 ### M7 — Scale and resilience
 
-100–300 receivers on one relay with cost per listener-hour; then a second relay, or peer-to-peer forwarding over WebRTC DataChannels, which the frame format is designed to allow.
+100–300 receivers on one relay with cost per listener-hour; then a second relay. Peer-to-peer forwarding over WebRTC DataChannels, which the frame format is designed to allow, only where it does not expose listeners to each other (§3).
 
 ## 5. Decisions
 
-Settled so far: the name and licence, the three priorities, fleet sizes, the December demo, and the relay's home for the tests and the demo (an existing studio server, public HTTPS, WebSocket only; a host with direct UDP comes with M3).
+Settled so far: the name and licence, the three priorities, fleet sizes, the December demo, the relay's home for the tests and the demo (an existing studio server, public HTTPS, WebSocket only; a host with direct UDP comes with M3), and the three rules of §1: one-tap joining with nothing to configure, nothing that locates or identifies, web page first with a native app only for a measured advantage.
 
 Waiting for the owner:
 
@@ -195,10 +220,9 @@ Waiting for the owner:
 | 1 | What is the demo: for whom, where, which source? | early December | A table of three phones and a laptop sender, indoors, a music file and a microphone |
 | 2 | Which phones and SIM cards (operators) can the tests use? | M0 sitting | Two iOS, two Android, two operators |
 | 3 | Will listeners of the live mode also hear the source directly? | before M3 | LTE live for walks and spaces where the source is not heard; venue WiFi with a local relay otherwise |
-| 4 | Is a native shell acceptable for receivers? | M2 | Web only until the M2 matrix says where it fails |
-| 5 | In one space, does a Bluetooth speaker raise everyone's delay, or is it kept out of that space's live group? | M4 | Priority 1 already answers: never two delays in one space. Raise D, or keep Bluetooth for buffered content |
-| 6 | Is rebroadcasting streaming services (Spotify and others) in scope for public shows? | M6 | Private and rehearsal use only: it conflicts with the services' terms and needs public-performance licensing |
-| 7 | Is a Raspberry Pi in the bag acceptable as the main sender? | M6 | Yes: a phone page covers microphone, line and files; only a Pi (or a native app) gets other apps' audio |
+| 4 | In one space, does a Bluetooth speaker raise everyone's delay, or is it kept out of that space's live group? | M4 | Priority 1 already answers: never two delays in one space. Raise D, or keep Bluetooth for buffered content |
+| 5 | Is rebroadcasting streaming services (Spotify and others) in scope for public shows? | M6 | Private and rehearsal use only: it conflicts with the services' terms and needs public-performance licensing |
+| 6 | Is a Raspberry Pi in the bag acceptable as the main sender? | M6 | Yes: a phone page covers microphone, line and files; only a Pi (or a native app) gets other apps' audio |
 
 A technical default, not an owner question: the wire format stays our own, shaped like Sendspin's, until M5 decides with the M2 baseline in hand.
 
@@ -208,6 +232,8 @@ A technical default, not an owner question: the wire format stays our own, shape
 - **Clock bias on LTE.** A lone uplink packet waits for the cell to grant it a slot, the answer does not: every estimate is shifted by a few milliseconds per device, differently per operator. Paired pings measure it (M0); a trim absorbs what stays constant; a local relay as time anchor is the fallback for fixed fleets.
 - **A moving offset.** Drift correction that works too hard is heard as a flanger between two devices in one space, even inside the 10 ms target. Hence the wander bound, and a player that corrects gently.
 - **Bluetooth latency moves.** It drifts over a session and resets on reconnect. One calibration is not enough; M4 has to detect and redo it.
+- **Crowded cells.** At a gathering, thousands of phones share the same cells, and loaded LTE latency can reach several hundred milliseconds. The group delay has to be chosen for the crowd, not for a quiet street; M3 measures inside one.
+- **Privacy by construction, not by promise.** A relay necessarily sees network addresses. It keeps no log of them, the proxies in front of it are set the same way, and listener pages send nothing that identifies a device. The lab page is the exception: it is an instrument for the studio's own devices and shares browser details with its room.
 - **One sender uplink.** Every listener depends on the sender's LTE uplink. A Pi sender with two paths is the eventual answer.
 - **The measuring room.** Narrow test tones shift with reflections: a table top can move a reading by a millisecond. The self-test of M0 measures exactly that, per room.
 - **Upkeep.** Browser, two phone platforms, ESP32 and Pi is a lot for a small studio. One engine, one frame format, reuse of existing embedded players where they fit.

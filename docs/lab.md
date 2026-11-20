@@ -11,6 +11,8 @@ npm start            # relay on http://localhost:3700
 
 Phones need HTTPS to use audio features and must reach the relay. On WiFi, any HTTPS tunnel to port 3700 will do for a first try. For LTE measurements the relay has to be on a public host ([deploy/](../deploy/README.md)): a tunnel adds a path of its own, and the point of the LTE runs is to measure the path.
 
+The lab is an instrument for our own devices: every page shares its browser details and measurements with the others in its room. Listener pages will not.
+
 Open `/lab/` on every device (add `?room=name` to keep groups apart) and tap the button. Each device gets a slot number, shown at the top. The page keeps the screen on; a phone that locks suspends its audio.
 
 ## By ear: unison
