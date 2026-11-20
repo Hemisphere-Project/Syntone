@@ -33,7 +33,7 @@ The first use is the hardest on privacy and simplicity: people's own phones at p
 | `shared/clock.js` | Clock sync estimator: runs in the browser and in Node, small enough to port to an ESP32 |
 | `shared/beats.js` | Decides which clicks to queue on each pass, whatever the device's output delay |
 | `shared/frame.js` | The audio frame: sequence number, capture time, codec, one packet (Opus, or PCM) |
-| `server/` | The relay: reference clock, rooms (what they use, their policy, their delay group), audio fan-out, static pages |
+| `server/` | The relay: reference clock, rooms (what they use, their policy, their delay group), audio fan-out, static pages; a room's sender may switch it from Opus to PCM |
 | `deploy/` | Running the relay on a host, behind a reverse proxy |
 | `web/lab/` | Click test page: every device clicks on the same beat |
 | `shared/stamps.js` | Sender: capture stamps fitted on (sample count, relay time), so they follow the sender's real rate and never jump |
@@ -44,11 +44,11 @@ The first use is the hardest on privacy and simplicity: people's own phones at p
 | `shared/pcm.js` | The fallback codec: 16-bit PCM, little-endian, interleaved |
 | `shared/streamclicks.js` | Stream click test: the click pattern written into the stream by capture stamp, and the receiver's gate to its own slot |
 | `shared/sender.js` | Sender core: capture blocks → stamped 20 ms frames → codec → transport; the test pattern in test mode |
-| `web/send/` | Sender page: test pattern, microphone or a file → Opus (WebCodecs) or PCM → the relay; sets the room's delay |
+| `web/send/` | Sender page: test pattern, microphone or a file → Opus (WebCodecs) or PCM → the relay; sets the room's delay and its codec (PCM, the fallback, mid-stream) |
 | `web/js/capture-worklet.js` | Capture in an AudioWorklet: blocks of samples, counted from the start, out to the page |
 | `web/js/codecs.js` | Opus through WebCodecs behind the sender core's encoder method and the receiver core's decoder method; PCM as the fallback |
 | `shared/receiver.js` | Receiver core: frames from the relay → decoder → (test mode: this phone's slot only) → the player; the time base as a line; counts lost frames |
-| `web/listen/` | Receiver page: one tap, nothing to set, no name; Opus decoded by the browser, else in WebAssembly, PCM in a PCM room; reports counts only |
+| `web/listen/` | Receiver page: one tap, nothing to set, no name; Opus decoded by the browser, else in WebAssembly, PCM in a PCM room, following the room when it switches; reports counts only |
 | `web/vendor/` | Third-party files served as they are: the WebAssembly Opus decoder (MIT), with where each came from |
 | `lab/analyse-clicks.mjs` | Measures a one-microphone recording of the click test |
 

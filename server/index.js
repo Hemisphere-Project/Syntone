@@ -18,12 +18,16 @@
 //                                            ← {t:'roster', peers:[{id, slot, role, name, report, drops}]}
 //                                            to everyone: on a join or a leave, and once a second while
 //                                            reports or skip counts change
+//   → {t:'codec', codec}                     a sender sets the room's codec ('opus' | 'pcm'),
+//                                            ← {t:'uses', uses} to everyone (see onCodec)
 //   → binary audio frame (shared/frame.js)   ← the same bytes, to every receiver in the room
 //
 // The seams (docs/architecture.md §6). A device says what it has in `hello`: time bases, transports,
 // codecs, ways to learn its output latency, kind of player. The welcome answers with what the room
 // uses. This build has one part behind each seam (the relay's clock exchange, WebSocket, Opus), so
 // the answer is the same for every device; the path is there for the day a seam gets a second part.
+// The codec is the one seam with a second part today: a room starts on Opus, and its sender may switch it
+// to plain PCM, the fallback when Opus fails on a phone in hand (plan §4 M1). Every peer is told.
 //
 // Policy (architecture §3): every room carries what it may ask of a device — identity, reports,
 // location, microphone, records kept by the relay — and sends it in the welcome. A room starts at
@@ -201,6 +205,21 @@ function onAudio(peer, raw, t) {
   fanOut(room.peers.values(), raw)
 }
 
+/**
+ * A sender sets the room's codec: one the frame format knows and the sender says it has (`hello.has`),
+ * and only while it is the room's sender or the room has none live, so nobody switches a stream from
+ * under the one sending it. Everyone hears of it; the welcome carries it to who joins later.
+ * Frames already on their way in the old codec are dropped by onAudio, as any frame of another codec.
+ */
+function onCodec(peer, codec, t) {
+  const room = peer.room
+  if (!room || peer.role !== 'sender' || typeof codec !== 'string' || !Object.hasOwn(CODECS, codec)) return
+  if (!peer.has?.codecs.includes(codec)) return
+  if (room.sender !== null && room.sender !== peer.id && room.peers.has(room.sender) && t - room.senderAt < cfg.senderIdleMs) return
+  if (room.uses.codec !== codec) room.uses = Object.freeze({ ...room.uses, codec })
+  broadcast(room, { t: 'uses', uses: room.uses })
+}
+
 function onMessage(ws, peer, raw, isBinary) {
   const t1 = now()
   peer.lastSeen = t1
@@ -244,6 +263,9 @@ function onMessage(ws, peer, raw, isBinary) {
       broadcast(peer.room, { t: 'state', state: peer.room.state })
       break
     }
+    case 'codec':
+      onCodec(peer, m.codec, t1)
+      break
     case 'delay': {                                      // a group's D: always present, always usable
       if (!peer.room) break
       const g = peer.room.groups.find((x) => x.id === (m.group ?? peer.group))

@@ -78,3 +78,21 @@ test('clockLine: the relay clock as a line on context time, rate included', () =
   assert.equal(lineMoved(l, { ...l, timelineMs: l.timelineMs + 1 }, 5000), true)
   assert.equal(lineMoved(null, l, 0), true)
 })
+
+test('the room switches codec: the new decoder takes over, the frames dropped by the switch are not losses', () => {
+  const posted = []
+  const opus = { codec: CODEC_OPUS, output: null, closed: false, decode({ seq, captureUs }) { this.output({ seq, captureUs, pcm: [new Float32Array(N)] }) }, close() { this.closed = true } }
+  const core = new ReceiverCore({ decoder: opus, post: (m) => posted.push(m) })
+  for (const seq of [1, 2, 3]) core.frame(encodeFrame({ seq, captureUs: seq * 20_000, codec: CODEC_OPUS, payload: new Uint8Array(40) }))
+  core.frame(frameAt(4, 80_000, [new Float32Array(N)]))       // PCM before the page has heard of the switch
+  assert.equal(core.stats.otherCodec, 1)
+  core.setDecoder(new PcmDecoder())
+  assert.ok(opus.closed)
+  for (const seq of [9, 10, 12]) core.frame(frameAt(seq, seq * 20_000, [new Float32Array(N).fill(0.25)]))
+  assert.deepEqual(posted.map((m) => m.seq), [1, 2, 3, 9, 10, 12])
+  assert.ok(Math.abs(posted[3].pcm[0][0] - 0.25) < 1e-4)
+  assert.equal(core.stats.lost, 1, '11 only: 4…8 went while the room switched')
+  core.setDecoder(new PcmDecoder())                           // same codec: a loss is still a loss
+  core.frame(frameAt(14, 280_000, [new Float32Array(N)]))
+  assert.equal(core.stats.lost, 2)
+})

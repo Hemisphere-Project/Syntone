@@ -2,7 +2,7 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
 import { SenderCore, PcmEncoder } from '../shared/sender.js'
-import { decodeFrame, CODEC_PCM } from '../shared/frame.js'
+import { decodeFrame, CODEC_PCM, CODEC_OPUS } from '../shared/frame.js'
 import { decodePcm } from '../shared/pcm.js'
 import { PERIOD_MS } from '../shared/clicks.js'
 
@@ -86,4 +86,26 @@ test('a transport that is backed up skips frames and counts them', () => {
   for (let b = 0; b < 20; b++) core.block([new Float32Array(BLOCK)], 2e9 + 3e6 + b * 2667)
   assert.equal(core.stats.sent, before)
   assert.ok(core.stats.skipped >= 2)
+})
+
+test('the room switches codec: frames go to the new encoder, sequence and stamps run on', () => {
+  // an encoder that answers one frame late, like WebCodecs: its last packet arrives after the switch
+  const late = { codec: CODEC_OPUS, output: null, held: null, closed: false,
+    encode(f) { if (this.held) this.output(this.held); this.held = { seq: f.seq, captureUs: f.captureUs, payload: new Uint8Array(30) } },
+    close() { this.closed = true } }
+  const core = new SenderCore({ encoder: late, send: () => true })
+  const before = run(core, 1)
+  const held = late.held
+  core.setEncoder(new PcmEncoder())
+  assert.ok(late.closed)
+  late.output(held)                                           // a packet the old encoder still hands over
+  assert.deepEqual([before.at(-1).seq, before.at(-1).codec], [held.seq, CODEC_OPUS], 'it keeps its own codec byte')
+  const after = run(core, 1, { t0: 2e9 + RATE * usPer / (1 + 40e-6) })   // the same capture, one second on
+  assert.ok(before.length > 1 && after.length > 0)
+  assert.ok(before.every((f) => f.codec === CODEC_OPUS))
+  assert.ok(after.every((f) => f.codec === CODEC_PCM))
+  assert.equal(after[0].seq, held.seq + 1, 'the sequence runs on')
+  const step = 960 * usPer / (1 + 40e-6)
+  assert.ok(Math.abs(after[0].captureUs - held.captureUs - step) < 1.5, 'and so do the stamps')
+  assert.equal(core.stats.sent, before.length + after.length)
 })

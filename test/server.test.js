@@ -241,6 +241,57 @@ test('one sender at a time: a second one waits until the first goes quiet or lea
   a.ws.close(); r.ws.close()
 })
 
+test('the room\'s sender switches it to PCM: everyone is told, PCM frames pass, Opus ones are dropped', async () => {
+  const both = { codecs: ['opus', 'pcm'] }
+  const s = await join('f6', 'sender', 'S', both)
+  const r = await join('f6', 'receiver', 'R', both)
+  const lab = await join('f6', 'lab', 'L', both)
+  s.ws.send(frame(1)); await settle(s)
+  r.send({ t: 'codec', codec: 'pcm' }); lab.send({ t: 'codec', codec: 'pcm' })   // only a sender sets it
+  s.send({ t: 'codec', codec: 'flac' }); s.send({ t: 'codec', codec: 'constructor' }); s.send({ t: 'codec', codec: 2 })
+  await settle(s, r, lab)
+  assert.equal(r.frames.length, 1)
+  assert.equal(peerOf(r).room.uses.codec, 'opus', 'a receiver, a lab page or an unknown codec changes nothing')
+
+  s.send({ t: 'codec', codec: 'pcm' })
+  for (const c of [s, r, lab]) assert.deepEqual((await c.next('uses')).uses, { ...USES, codec: 'pcm' })
+  s.ws.send(frame(2)); s.ws.send(frame(3, undefined, CODEC_PCM))
+  const late = await join('f6', 'receiver', 'late')
+  assert.equal(late.welcome.uses.codec, 'pcm', 'who joins later is told by the welcome')
+  s.ws.send(frame(4, undefined, CODEC_PCM))
+  await settle(s, r, late)
+  assert.deepEqual(seqs(r), [1, 3, 4])
+  assert.deepEqual(r.frames.slice(1).map((f) => decodeFrame(f).codec), [CODEC_PCM, CODEC_PCM])
+  assert.deepEqual(seqs(late), [4])
+
+  s.send({ t: 'codec', codec: 'opus' })
+  assert.equal((await r.next('uses')).uses.codec, 'opus')
+  s.ws.send(frame(5)); await settle(s, r)
+  assert.deepEqual(seqs(r).slice(-1), [5])
+  assert.deepEqual((await join('f7', 'receiver', 'R')).welcome.uses, USES, 'another room is untouched')
+  for (const c of [s, r, lab, late]) c.ws.close()
+})
+
+test('the codec: a sender sets only one it has, and never under a live sender', async () => {
+  const a = await join('f8', 'sender', 'A', { codecs: ['opus', 'pcm'] })
+  const b = await join('f8', 'sender', 'B', { codecs: ['pcm'] })
+  const quiet = await join('f8', 'sender', 'Q')                 // says it has nothing
+  const r = await join('f8', 'receiver', 'R')
+  quiet.send({ t: 'codec', codec: 'pcm' })
+  a.ws.send(frame(1)); await settle(a)
+  b.send({ t: 'codec', codec: 'pcm' })                         // A is sending: B may not switch its stream
+  await settle(quiet, b, r)
+  assert.equal(peerOf(r).room.uses.codec, 'opus')
+  await new Promise((ok) => setTimeout(ok, 650))               // A quiet for longer than senderIdleMs (500)
+  b.send({ t: 'codec', codec: 'opus' })                        // not one B has
+  await settle(b)
+  b.send({ t: 'codec', codec: 'pcm' })                         // an iPhone-like sender: no Opus, so PCM
+  assert.equal((await r.next('uses')).uses.codec, 'pcm')
+  b.ws.send(frame(7, undefined, CODEC_PCM)); await settle(b, r)
+  assert.deepEqual(seqs(r), [1, 7])
+  for (const c of [a, b, quiet, r]) c.ws.close()
+})
+
 test('a receiver that cannot keep up has frames skipped, not queued, and the skips are counted', () => {
   const fake = (role, bufferedAmount) => ({ role, drops: 0, dirty: false, ws: { readyState: 1, bufferedAmount, send(d) { fake.sent.push([role, d]) } } })
   fake.sent = []

@@ -94,6 +94,7 @@ export class Link extends EventTarget {
           break
         case 'state': this.state = m.state || {}; this._emit('state', this.state); break
         case 'groups': this.groups = m.groups || []; this._emit('groups', this.groups); break
+        case 'uses': this.uses = m.uses || null; this._emit('uses', this.uses); break     // the room switched codec
         case 'roster': this.peers = m.peers || []; this._emit('roster', this.peers); break
       }
     }
@@ -189,6 +190,9 @@ export class Link extends EventTarget {
     ws.send(bytes)
     return true
   }
+
+  /** Sets the room's codec ('opus' | 'pcm'): a sender only, one it has, and the relay tells everyone (`uses`). */
+  setCodec(codec) { if (this.ws?.readyState === 1) this.ws.send(JSON.stringify({ t: 'codec', codec })) }
 
   setState(patch) { if (this.ws?.readyState === 1) this.ws.send(JSON.stringify({ t: 'state', patch })) }
   report(report) { if (this.ws?.readyState === 1) this.ws.send(JSON.stringify({ t: 'report', report })) }

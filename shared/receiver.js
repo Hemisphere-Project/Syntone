@@ -43,8 +43,13 @@ export class ReceiverCore {
     this.setDecoder(decoder)
   }
 
+  /**
+   * The room switched codec (or the page chose another decoder). The frames dropped while the switch
+   * travelled are not losses on the path: across a change of codec the sequence count starts over.
+   */
   setDecoder(decoder) {
-    this.decoder?.close?.()
+    const old = this.decoder
+    if (old && old !== decoder) { old.close?.(); if (old.codec !== decoder.codec) this._last = null }
     this.decoder = decoder
     decoder.output = (f) => this._decoded(f)
   }

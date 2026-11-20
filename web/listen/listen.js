@@ -6,10 +6,12 @@
 // before a gesture), joins the room and feeds the player worklet: decoded frames, the time base as
 // a line (context time → relay time, through AudioClock and the link's ClockSync), the device's
 // output latency L and the room's delay D. Back to the relay go counts only (policy reports: counts).
+// When the room switches codec (Opus ↔ PCM, the sender's choice), the page swaps its decoder: nothing to tap.
 import { Link } from '/js/link.js'
 import { AudioClock } from '/js/audioclock.js'
 import { OpusDecoder, PcmDecoder, WasmOpusDecoder, canDecodeOpus, wasmOpusDecoder } from '/js/codecs.js'
 import { ReceiverCore, clockLine, lineMoved } from '/shared/receiver.js'
+import { CODECS } from '/shared/frame.js'
 
 const $ = (id) => document.getElementById(id)
 const q = new URLSearchParams(location.search)
@@ -55,8 +57,9 @@ async function go() {
       rate: RATE, testSlot: test ? link.slot : -1,
     })
     link.addEventListener('binary', (e) => core.frame(e.detail))
-    link.addEventListener('welcome', () => { core.resetSeq(); if (test) core.testSlot = link.slot })
+    link.addEventListener('welcome', () => { core.resetSeq(); if (test) core.testSlot = link.slot; follow(channels) })
     link.addEventListener('groups', () => feed())
+    link.addEventListener('uses', () => follow(channels))
 
     timers.push(setInterval(() => clock.sample(), 50))
     timers.push(setInterval(feed, 250))
@@ -70,6 +73,19 @@ async function go() {
     note(String(e.message || e), true)
     stop()
   }
+}
+
+/** The room switched codec: decode the new one from its next frame on. One swap at a time, the last word wins. */
+let swapping = 0
+async function follow(channels) {
+  const codec = link?.uses?.codec
+  if (!core || !codec || CODECS[codec] === core.decoder.codec) return
+  const mine = ++swapping
+  try {
+    const d = await decoderFor(codec, channels)
+    if (mine !== swapping || !core || link?.uses?.codec !== codec) { d.close?.(); return }
+    core.setDecoder(d)
+  } catch (e) { note(String(e.message || e), true) }
 }
 
 /** The player's inputs that move: the time base, L, D. Sent only when they change. */

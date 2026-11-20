@@ -39,12 +39,22 @@ export class SenderCore {
     this.rate = rate
     this.framer = new Framer({ channels, frameSamples })
     this.stamper = new CaptureStamper({ rate, ...stamps })
-    this.encoder = encoder
     this.send = send
     this.testSlots = testSlots
     this.testOverInput = testOverInput
     this.counts = { blocks: 0, frames: 0, unstamped: 0, sent: 0, skipped: 0, bytes: 0, maxPayload: 0 }
-    encoder.output = (p) => this._out(p)
+    this.setEncoder(encoder)
+  }
+
+  /**
+   * Another codec (the room switched): the next frame goes to the new encoder, the stamps and the
+   * sequence run on. The old one is closed; a packet it still hands over keeps its own codec byte.
+   */
+  setEncoder(encoder) {
+    const old = this.encoder
+    this.encoder = encoder
+    encoder.output = (p) => this._out(p, encoder.codec)
+    if (old && old !== encoder) old.close?.()
   }
 
   /**
@@ -65,8 +75,8 @@ export class SenderCore {
     }
   }
 
-  _out({ seq, captureUs, payload }) {
-    const bytes = encodeFrame({ seq, captureUs, payload, codec: this.encoder.codec })
+  _out({ seq, captureUs, payload }, codec) {
+    const bytes = encodeFrame({ seq, captureUs, payload, codec })
     if (this.send(bytes) === false) { this.counts.skipped++; return }
     this.counts.sent++
     this.counts.bytes += bytes.length

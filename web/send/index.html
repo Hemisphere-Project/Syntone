@@ -32,6 +32,10 @@
         <select id="channels"><option value="1">mono</option><option value="2">stereo</option></select>
       </div>
       <div>
+        <label for="codec">Room codec</label>
+        <select id="codec"><option value="opus">Opus</option><option value="pcm">PCM — the fallback, about 0.8 Mbit/s a channel</option></select>
+      </div>
+      <div>
         <label for="delay">Room delay D (ms)</label>
         <input id="delay" type="number" min="10" max="30000" step="10">
       </div>
