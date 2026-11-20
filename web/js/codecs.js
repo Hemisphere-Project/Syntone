@@ -121,3 +121,49 @@ export class OpusDecoder {
 
   close() { try { this.dec.close() } catch {} }
 }
+
+/**
+ * The fallback where WebCodecs cannot decode Opus (iOS Safari before 26): libopus compiled to
+ * WebAssembly (web/vendor/opus-decoder.min.js, loaded only when asked for). Synchronous: each packet
+ * answers at once, with its own stamp. Use `await wasmOpusDecoder(...)`: the module compiles first.
+ */
+let wasmLib = null
+function loadWasmOpus() {
+  wasmLib ??= new Promise((ok, no) => {
+    if (globalThis['opus-decoder']) return ok(globalThis['opus-decoder'])
+    const s = document.createElement('script')
+    s.src = '/vendor/opus-decoder.min.js'
+    s.onload = () => (globalThis['opus-decoder'] ? ok(globalThis['opus-decoder']) : no(new Error('the WebAssembly Opus decoder did not load')))
+    s.onerror = () => { wasmLib = null; no(new Error('the WebAssembly Opus decoder did not load')) }
+    document.head.appendChild(s)
+  })
+  return wasmLib
+}
+
+export class WasmOpusDecoder {
+  constructor(lib, { rate = 48000, channels = 1 } = {}) {
+    this.codec = CODECS.opus
+    this.output = null
+    this.channels = channels
+    this.errors = 0
+    this.dec = new lib.OpusDecoder({ channels, sampleRate: rate, preSkip: 0 })
+    this.ready = this.dec.ready
+  }
+
+  decode({ seq, captureUs, payload }) {
+    const r = this.dec.decodeFrame(payload)
+    if (!r || !r.samplesDecoded || r.errors?.length) { this.errors++; return false }
+    const pcm = []
+    for (let c = 0; c < this.channels; c++) pcm.push(r.channelData[Math.min(c, r.channelData.length - 1)].slice(0, r.samplesDecoded))
+    this.output?.({ seq, captureUs, pcm })
+    return true
+  }
+
+  close() { try { this.dec.free() } catch {} }
+}
+
+export async function wasmOpusDecoder(o = {}) {
+  const d = new WasmOpusDecoder(await loadWasmOpus(), o)
+  await d.ready
+  return d
+}

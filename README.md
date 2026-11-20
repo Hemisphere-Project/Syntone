@@ -48,7 +48,8 @@ The first use is the hardest on privacy and simplicity: people's own phones at p
 | `web/js/capture-worklet.js` | Capture in an AudioWorklet: blocks of samples, counted from the start, out to the page |
 | `web/js/codecs.js` | Opus through WebCodecs behind the sender core's encoder method and the receiver core's decoder method; PCM as the fallback |
 | `shared/receiver.js` | Receiver core: frames from the relay → decoder → (test mode: this phone's slot only) → the player; the time base as a line; counts lost frames |
-| `web/listen/` | Receiver page: one tap, nothing to set, no name; Opus decoded by the browser, PCM in a PCM room; reports counts only |
+| `web/listen/` | Receiver page: one tap, nothing to set, no name; Opus decoded by the browser, else in WebAssembly, PCM in a PCM room; reports counts only |
+| `web/vendor/` | Third-party files served as they are: the WebAssembly Opus decoder (MIT), with where each came from |
 | `lab/analyse-clicks.mjs` | Measures a one-microphone recording of the click test |
 
 ## Try the click test

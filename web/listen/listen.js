@@ -1,13 +1,14 @@
 // Syntone receiver page (plan §4 M1): one tap, nothing to set, nothing that names the device.
 //
 // The room is ?room=<name> (default « lobby »); ?test plays the stream click test, this phone's slot
-// only (the lab's roster shows which). The tap opens the audio context (a browser plays nothing
+// only (the lab's roster shows which). Opus is decoded by the browser (WebCodecs), else by libopus in
+// WebAssembly; ?decoder=wasm forces the second, to check it on a browser that has both. The tap opens the audio context (a browser plays nothing
 // before a gesture), joins the room and feeds the player worklet: decoded frames, the time base as
 // a line (context time → relay time, through AudioClock and the link's ClockSync), the device's
 // output latency L and the room's delay D. Back to the relay go counts only (policy reports: counts).
 import { Link } from '/js/link.js'
 import { AudioClock } from '/js/audioclock.js'
-import { OpusDecoder, PcmDecoder, canDecodeOpus } from '/js/codecs.js'
+import { OpusDecoder, PcmDecoder, WasmOpusDecoder, canDecodeOpus, wasmOpusDecoder } from '/js/codecs.js'
 import { ReceiverCore, clockLine, lineMoved } from '/shared/receiver.js'
 
 const $ = (id) => document.getElementById(id)
@@ -15,6 +16,7 @@ const q = new URLSearchParams(location.search)
 const RATE = 48000
 const room = (q.get('room') || 'lobby').slice(0, 32)
 const test = q.has('test')
+const forceWasm = q.get('decoder') === 'wasm'
 
 let link, ctx, clock, node, core, wake, timers = [], line = null, stats = null, sentL = null, sentD = null
 
@@ -25,8 +27,8 @@ const welcomed = () => (link.uses ? Promise.resolve() : new Promise((ok) => link
 async function decoderFor(codec, channels) {
   if (codec === 'pcm') return new PcmDecoder({ channels })
   if (codec !== 'opus') throw new Error(`the room uses ${codec}, which this page does not have`)
-  if (await canDecodeOpus(RATE, channels)) return new OpusDecoder({ rate: RATE, channels, onError: (e) => note(`decoder: ${e.message}`, true) })
-  throw new Error('this browser cannot decode Opus yet (the WebAssembly decoder is still to come)')
+  if (!forceWasm && (await canDecodeOpus(RATE, channels))) return new OpusDecoder({ rate: RATE, channels, onError: (e) => note(`decoder: ${e.message}`, true) })
+  return wasmOpusDecoder({ rate: RATE, channels })
 }
 
 async function go() {
@@ -45,7 +47,7 @@ async function go() {
     node.connect(ctx.destination)
     node.port.onmessage = (e) => { if (e.data?.type === 'stats') stats = e.data }
 
-    link = new Link({ room, role: 'receiver', name: '', has: { codecs: (await canDecodeOpus(RATE, 1)) ? ['opus', 'pcm'] : ['pcm'] } })
+    link = new Link({ room, role: 'receiver', name: '', has: { codecs: ['opus', 'pcm'] } })      // Opus always: WebAssembly where the browser lacks it
     await welcomed()
     core = new ReceiverCore({
       decoder: await decoderFor(link.uses?.codec || 'opus', channels),
@@ -112,7 +114,7 @@ function show() {
   $('k-err').textContent = fmt(stats?.smoothedMs, 2)
   $('k-frames').textContent = `${s.decoded} · ${s.lost}${s.received - s.decoded > 8 ? ` (${s.received - s.decoded} undecoded)` : ''}`
   $('k-drop').textContent = String(stats?.dropouts ?? '–')
-  $('k-codec').textContent = core.decoder instanceof PcmDecoder ? 'pcm' : 'opus (browser)'
+  $('k-codec').textContent = core.decoder instanceof PcmDecoder ? 'pcm' : core.decoder instanceof WasmOpusDecoder ? 'opus (wasm)' : 'opus (browser)'
   $('k-d').textContent = fmt(link.delayMs, 0)
 }
 
