@@ -61,3 +61,63 @@ export class OpusEncoder {
 
   close() { try { this.enc.close() } catch {} }
 }
+
+// ---------------------------------------------------------------- decoding (the receiver's side)
+
+export { PcmDecoder } from '/shared/receiver.js'
+
+/** Can this browser decode Opus through WebCodecs? (iOS Safari before 26 cannot: WebAssembly then) */
+export async function canDecodeOpus(rate = 48000, channels = 1) {
+  if (!('AudioDecoder' in self)) return false
+  try { return !!(await AudioDecoder.isConfigSupported({ codec: 'opus', sampleRate: rate, numberOfChannels: channels })).supported } catch { return false }
+}
+
+/**
+ * Opus through WebCodecs. Each packet goes in with a timestamp made from its sequence number, so the
+ * answer — asynchronous, possibly batched — is matched back to its own frame and capture stamp. No OpusHead is given,
+ * so nothing trims the encoder's look-ahead: the decoded audio is late by a constant (to be measured
+ * on the stream click test, then taken off the stamp here).
+ */
+export class OpusDecoder {
+  constructor({ rate = 48000, channels = 1, onError = () => {} } = {}) {
+    this.codec = CODECS.opus
+    this.output = null
+    this.channels = channels
+    this.pending = new Map()      // chunk timestamp → {seq, captureUs}
+    this.errors = 0
+    this.shifted = 0              // frames matched by order because the decoder re-timed them
+    this.dec = new AudioDecoder({
+      output: (ad) => {
+        // by timestamp; a decoder that re-times its output (Chrome counts from the first packet) still
+        // answers one frame per packet, in order: then the oldest frame waiting is this one
+        let ts = ad.timestamp
+        if (!this.pending.has(ts)) { ts = this.pending.keys().next().value; this.shifted++ }
+        const f = this.pending.get(ts)
+        for (const k of this.pending.keys()) { this.pending.delete(k); if (k === ts) break }
+        if (f) {
+          const pcm = []
+          for (let c = 0; c < this.channels; c++) {
+            const ch = new Float32Array(ad.numberOfFrames)
+            ad.copyTo(ch, { planeIndex: Math.min(c, ad.numberOfChannels - 1), format: 'f32-planar' })
+            pcm.push(ch)
+          }
+          this.output?.({ seq: f.seq, captureUs: f.captureUs, pcm })
+        }
+        ad.close()
+      },
+      error: (e) => { this.errors++; onError(e) },
+    })
+    this.dec.configure({ codec: 'opus', sampleRate: rate, numberOfChannels: channels })
+  }
+
+  decode({ seq, captureUs, payload }) {
+    if (this.dec.state !== 'configured') return false
+    const timestamp = seq * 20_000        // 20 ms apart, like the packets: what a re-timing decoder counts
+    this.pending.set(timestamp, { seq, captureUs })
+    if (this.pending.size > 64) this.pending.delete(this.pending.keys().next().value)
+    this.dec.decode(new EncodedAudioChunk({ type: 'key', timestamp, data: payload }))
+    return true
+  }
+
+  close() { try { this.dec.close() } catch {} }
+}

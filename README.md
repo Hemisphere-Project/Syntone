@@ -46,7 +46,9 @@ The first use is the hardest on privacy and simplicity: people's own phones at p
 | `shared/sender.js` | Sender core: capture blocks → stamped 20 ms frames → codec → transport; the test pattern in test mode |
 | `web/send/` | Sender page: test pattern, microphone or a file → Opus (WebCodecs) or PCM → the relay; sets the room's delay |
 | `web/js/capture-worklet.js` | Capture in an AudioWorklet: blocks of samples, counted from the start, out to the page |
-| `web/js/codecs.js` | Opus through WebCodecs behind the sender core's encoder method; PCM as the fallback |
+| `web/js/codecs.js` | Opus through WebCodecs behind the sender core's encoder method and the receiver core's decoder method; PCM as the fallback |
+| `shared/receiver.js` | Receiver core: frames from the relay → decoder → (test mode: this phone's slot only) → the player; the time base as a line; counts lost frames |
+| `web/listen/` | Receiver page: one tap, nothing to set, no name; Opus decoded by the browser, PCM in a PCM room; reports counts only |
 | `lab/analyse-clicks.mjs` | Measures a one-microphone recording of the click test |
 
 ## Try the click test

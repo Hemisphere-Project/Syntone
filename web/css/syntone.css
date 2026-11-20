@@ -26,3 +26,4 @@ th, td { text-align: right; padding: 5px 6px; border-bottom:1px solid var(--line
 th:first-child, td:first-child, th:nth-child(2), td:nth-child(2) { text-align:left; }
 .scroll { overflow-x: auto; }
 .ok { color: var(--ok); } .bad { color: var(--bad); } .dim { color: var(--dim); }
+.hidden { display:none; }

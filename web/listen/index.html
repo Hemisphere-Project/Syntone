@@ -1,0 +1,31 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Syntone — listen</title>
+<link rel="icon" href="data:,">
+<link rel="stylesheet" href="/css/syntone.css">
+</head>
+<body>
+<main>
+  <h1>Syntone</h1>
+  <p class="lead">Every phone here plays the same sound at the same moment. Turn the volume up and tap.</p>
+  <button id="go" class="primary">Listen</button>
+  <p id="note" class="dim"></p>
+
+  <div id="live" class="hidden">
+    <div class="grid">
+      <div class="kv"><b id="k-state">–</b><span>playing</span></div>
+      <div class="kv"><b id="k-err">–</b><span>off by (ms)</span></div>
+      <div class="kv"><b id="k-frames">–</b><span>frames · lost</span></div>
+      <div class="kv"><b id="k-drop">–</b><span>dropouts</span></div>
+      <div class="kv"><b id="k-codec">–</b><span>decoder</span></div>
+      <div class="kv"><b id="k-d">–</b><span>room delay D (ms)</span></div>
+    </div>
+    <p class="row"><button id="stop">Stop</button></p>
+  </div>
+</main>
+<script type="module" src="./listen.js"></script>
+</body>
+</html>
