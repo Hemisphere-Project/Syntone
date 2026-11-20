@@ -12,13 +12,17 @@ An FM transmitter and a handful of FM receivers give you something simple and pr
 - **Outputs**: a jack, a built-in speaker, and most often a Bluetooth speaker.
 - **Network**: WiFi and 4G/LTE, through a small hosted relay.
 
-### Who listens, and what that rules out (decided 2026-11-20)
+### The first use, and what it rules out (decided 2026-11-20)
 
-Receivers are people's own phones, at public gatherings, demonstrations included, where being located or tracked is a real concern. Three rules follow, and they outrank convenience for the builders:
+Syntone is meant to serve several settings with one core and interchangeable parts: the public's phones in the street, an audience on a venue's WiFi, an installation of operated players on its own network ([architecture](architecture.md)). Each setting is a *profile*: a choice of parts and a policy on what devices may be asked.
+
+The first profile, **Street**, is the strictest, and its rules are the defaults of the whole project. Receivers are people's own phones, at public gatherings, demonstrations included, where being located or tracked is a real concern. Three rules follow, and they outrank convenience for the builders:
 
 - **Joining is one link or QR code and one tap.** Nothing to configure, no advanced setting, no tuning by the listener. Whatever a device needs (its output latency, a network to join), the page or the app finds or does by itself.
 - **Nothing that locates or identifies.** No account, no location permission, no device details shared with other listeners, no record of who listened. The microphone, if calibration ever needs it, is asked for explicitly, used on the device, and never sent anywhere.
 - **Web page first.** A native app is possible later, only where it brings a measured advantage a page cannot. If a route needs special connectivity or settings, the app handles them, not the listener.
+
+Controlled settings may loosen these on purpose: a dedicated network, named and monitored devices, location allowed. They do so as their own profiles, switched on by an operator for a room, never by default.
 
 ### What the desk research expects (not measured)
 
@@ -100,6 +104,20 @@ The brief allows trading audio quality for latency. The research answer: on LTE,
 - **Receiver**: decodes, then plays from an AudioWorklet (code running in the browser's audio thread) that holds the equation above. When data is late it plays silence and rejoins exactly on time; it never stalls and catches up.
 - **Lab** ([web/lab/](../web/lab/), [lab/](../lab/analyse-clicks.mjs)): the measuring instruments. Nothing is called working until it has a number from here.
 
+### One core, interchangeable parts
+
+The frame, the playout rule, the receiver's contract and the measuring method are the same everywhere. Everything else sits behind a seam with several possible parts: the time base, the transport, the relay topology, the codec, the player, the way a device learns its output latency, the way it joins. A room carries a policy (identity, reports, location, microphone, records) whose default is the strictest. [architecture.md](architecture.md) gives the seams, the policy and the profiles:
+
+| Profile | Setting | Expected delay | Expected agreement |
+|---|---|---|---|
+| Street (the first) | The public's phones, 4G, hosted relay | 200–600 ms | 5–15 ms |
+| Venue | The public's phones on the venue's WiFi, relay on site | 70–200 ms | 1–10 ms |
+| Installation | Operated players on a dedicated network | 30–80 ms | 1–2 ms |
+| Operated outdoors | Studio devices over 4G with satellite time | 200–400 ms | set by the outputs |
+| Trunk and last hop | Hosted relay feeding a relay on site | 4G leg + local | as the local profile |
+
+The first build is the Street profile only, with one part behind each seam. A second part is added only with a measurement showing what it buys, in a named profile.
+
 ### What is reused, what is ruled out
 
 | | Verdict | Why |
@@ -115,18 +133,18 @@ The brief allows trading audio quality for latency. The research answer: on LTE,
 
 ### Other routes kept open
 
-WebRTC and FlanerieMozaic's sync were the starting candidates. These are the others, ranked by the rules of §1. The last-hop rows marked † come from the project's own reasoning and have not been through desk research yet.
+WebRTC and FlanerieMozaic's sync were the starting candidates. These are the others, with their standing in the Street profile and, where it differs, in controlled ones. The last-hop rows marked † come from the project's own reasoning and have not been through desk research yet.
 
 | Route | What it would bring | Standing |
 |---|---|---|
 | WebRTC as transport with our own playout (frames tapped before WebRTC's buffer) | WebRTC's NAT traversal and servers, with timing still ours | Joins the transport comparison of M3 |
 | Media over QUIC | Fan-out to thousands through shared relays | Specification still moving; revisit at M7 |
 | SRT or RIST, two SIM cards on the sender | A sender uplink that survives one bad network | With the Pi sender, M6 |
-| Satellite time (GPS) as the shared clock | Removes the LTE clock bias entirely | Needs a native app **and location permission**: against the rules of §1. Only ever opt-in, never relied on; fine for the studio's own Pi and ESP32 receivers |
-| A local relay on site (a Pi with a hotspot and an LTE uplink) | Devices in one space sync over local WiFi; LTE then only sets the delay | Joining a hotspot is a setting: only acceptable if an app does it for the listener. Natural for the studio's own receivers (M5) |
+| Satellite time (GPS) as the shared clock | Removes the LTE clock bias entirely | Needs a native app **and location permission**: out of the Street profile, opt-in at most. A proper part for operated profiles, provided the relay is disciplined by it too |
+| A local relay on site (a Pi with a hotspot and an LTE uplink) | Devices in one space sync over local WiFi; LTE then only sets the delay | Joining a hotspot is a setting: in Street, only if an app does it for the listener. The basis of the Venue and Installation profiles (M5) |
 | LTE as trunk, local radio as last hop † (Auracast, or a real FM transmitter) | One device depends on LTE; the space is fed by radio, in sync by construction | Spike in M4/M5. Auracast needs LE Audio earbuds or speakers and cannot be sent or tuned from an iPhone alone |
 | Phone-to-phone local links † (WiFi Aware, Multipeer Connectivity) | Nearby phones relay to each other with no infrastructure | Native only, Android and iOS do not interoperate. Later, if at all |
-| Peer-to-peer forwarding between listeners | No central relay to fail or to pay for | Peers learn each other's network addresses: between listeners' own phones that breaks the second rule of §1, unless traffic is relayed. Fine between the operator's devices |
+| Peer-to-peer forwarding between listeners | No central relay to fail or to pay for | Peers learn each other's network addresses: between listeners' own phones that breaks the second rule of §1, unless traffic is relayed. Fine between operated devices |
 | Cellular broadcast (LTE Broadcast, 5G Broadcast) † | The operator-grade equivalent of FM | Needs an operator, almost no handsets: ruled out |
 
 ## 4. Milestones
@@ -150,6 +168,7 @@ Clock sync, a click test page where every device clicks on the same beat, and a 
 A sender page and receiver pages, through the hosted relay, at one fixed delay.
 
 - Opus 20 ms frames over WebSocket; AudioWorklet player with drift correction; a trim per device; the lab roster extended with each device's playout error and dropout count.
+- Street profile only, built with the seams of the [architecture](architecture.md) in place: the player takes a time base and a latency source, not a socket and a setting; frames name their codec; joining carries what the device has and what the room allows.
 - **How it is measured**: a *stream click test*. The sender puts the staggered click pattern into the audio stream itself, and in test mode each receiver lets through only its own slot. The analyser then measures the real path (capture stamp, relay, decode, player, speaker) with the M0 method. For D, a lab device on slot 0 clicks into the sender's microphone, so the recording holds the source next to every receiver. A dropout is a frame the player reports as missing, not an impression.
 - **Pass**: three phones on LTE (at least one iPhone, one Android, two operators if at hand), built-in speakers, trims set from one staggered recording of the same session:
   - within 10 ms of each other 95 % of the time, wander under 1 ms per minute, over 30 minutes;
@@ -192,13 +211,15 @@ A per-device, per-route latency that is measured, not believed, and found withou
 
 - **Pass**: Bluetooth receivers within 10 ms of each other and of their group's timeline, 95 % of the time, over 30 minutes; after a reconnect, automatic recalibration restores that within 10 s.
 
-### M5 — Small receivers: ESP32 and Raspberry Pi
+### M5 — Small receivers, and the first controlled setting
 
 ESP32-S3 with an I2S amplifier; Pi with a DAC. First question: speak Sendspin on the wire and reuse its ESP32 and Pi players, or keep our own frame and port the player.
 
-- **A Pi as local relay**: hotspot, LTE uplink, time anchor for the devices around it. Measured against the hosted relay for devices sharing a space.
+- **The Installation profile, measured**: a relay on site (a Pi), a dedicated WiFi network, plain UDP, named devices with their latency set by the operator. This is where second parts first appear behind the seams, and where the player's test vectors prove a port before it makes a sound.
+- **The same Pi as relay for phones around it** (the Venue profile, and the last hop of a 4G trunk), measured against the hosted relay for devices sharing a space.
+- **Satellite time** tried on the studio's own devices outdoors, with the relay disciplined by it.
 - **Getting them online**, in order of preference: a phone's WiFi hotspot; a Pi tethered to a phone over USB (works with Android and iPhone); an ESP32 tethered over USB as a spike, Android only (unproven); iPhone-to-ESP32 over USB is ruled out by the research.
-- **Pass**: embedded receivers within 2 ms of each other on WiFi, within 5 ms of phones.
+- **Pass**: embedded receivers within 2 ms of each other on the dedicated network at a delay of 80 ms or less; within 5 ms of phones.
 
 ### M6 — The sender grows up
 
@@ -211,7 +232,7 @@ ESP32-S3 with an I2S amplifier; Pi with a DAC. First question: speak Sendspin on
 
 ## 5. Decisions
 
-Settled so far: the name and licence, the three priorities, fleet sizes, the December demo, the relay's home for the tests and the demo (an existing studio server, public HTTPS, WebSocket only; a host with direct UDP comes with M3), and the three rules of §1: one-tap joining with nothing to configure, nothing that locates or identifies, web page first with a native app only for a measured advantage.
+Settled so far: the name and licence, the three priorities, fleet sizes, the December demo, the relay's home for the tests and the demo (an existing studio server, public HTTPS, WebSocket only; a host with direct UDP comes with M3), the three rules of the first profile (§1): one-tap joining with nothing to configure, nothing that locates or identifies, web page first with a native app only for a measured advantage; and that the project stays modular, so controlled settings can later choose other parts and a looser policy on the same core.
 
 Waiting for the owner:
 
